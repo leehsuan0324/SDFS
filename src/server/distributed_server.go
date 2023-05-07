@@ -24,7 +24,11 @@ func main() {
 	} else {
 		log_path = "./testdata/MP1/" + "vm" + os.Args[1] + ".log"
 	}
-
+	go log_query_server()
+	for {
+	}
+}
+func log_query_server() {
 	service := new(Distribited_Servers)
 	rpc.Register(service)
 
@@ -42,7 +46,6 @@ func main() {
 		go rpc.ServeConn(conn)
 	}
 }
-
 func (t *Distribited_Servers) Grep(req rpc_struct.LogQueryRequest, res *rpc_struct.LogQueryResponse) error {
 
 	params := strings.Split(req.Param, " ")
@@ -86,4 +89,10 @@ func (t *Distribited_Servers) Search_log(req rpc_struct.LogQueryRequest, res *rp
 	res.Result = temp
 
 	return nil
+}
+func (t *Distribited_Servers) Ack() {
+
+}
+func (t *Distribited_Servers) Update() {
+
 }
