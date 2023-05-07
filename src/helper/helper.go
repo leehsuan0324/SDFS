@@ -2,6 +2,7 @@ package helper
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strings"
 )
@@ -28,4 +29,9 @@ func ReplaceAllExceptLast(d string, o string, n string) string {
 	}
 
 	return strings.ReplaceAll(d[:ln], o, n) + d[ln:]
+}
+func File_2_string(path string) string {
+	f, err := ioutil.ReadFile(path)
+	ExitError(err)
+	return string(f)
 }

@@ -2,14 +2,14 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"net"
 	"net/rpc"
 	"os"
 	"strings"
 	"sync"
 	"time"
-	"workspace/helper"
-	rpc_struct "workspace/struct/rpc_struct"
+	helper "workspace/src/helper"
+	rpc_struct "workspace/src/struct/rpc_struct"
 )
 
 var wg sync.WaitGroup
@@ -30,12 +30,20 @@ func main() {
 	hosts_statistic = make(map[string]*rpc_struct.LogQueryResponse)
 	m = new(sync.Mutex)
 
-	raw_log_servers := strings.Split(read_conf(), "\n")
+	raw_log_servers := strings.Split(helper.File_2_string("./configs/log_server.conf"), "\n")
 	log_servers := map[string]Node{}
 	for _, raw_log_server := range raw_log_servers {
 		server_info := strings.Split(raw_log_server, ",")
 		log_servers[server_info[0]] = Node{Ip: server_info[1], Port: server_info[2]}
+		ips, err := net.LookupIP(server_info[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Could not get IPs: %v. Use Pre-write-in IP\n", err)
+			log_servers[server_info[0]] = Node{Ip: server_info[1], Port: server_info[2]}
+		} else {
+			log_servers[server_info[0]] = Node{Ip: ips[0].String(), Port: server_info[2]}
+		}
 	}
+
 	start := time.Now()
 	wg.Add(len(log_servers))
 
@@ -48,7 +56,6 @@ func main() {
 	elapsed := time.Since(start)
 	sum := 0
 	for host, logqueryresponse := range hosts_statistic {
-		// temp := helper.ReplaceAllExceptLast(logqueryresponse.Result, "\n", "\n"+"["+host+"] ")
 		fmt.Printf("\n== %s ==\n%s\nLine: %d  Time: %s\n", host, logqueryresponse.Result, logqueryresponse.Line, logqueryresponse.Time)
 		sum += logqueryresponse.Line
 	}
@@ -83,10 +90,4 @@ func rpc_request(param string, host string, service string) {
 	m.Lock()
 	hosts_statistic[host] = &response
 	m.Unlock()
-}
-
-func read_conf() string {
-	f, err := ioutil.ReadFile("configs/log_server.conf")
-	helper.ExitError(err)
-	return string(f)
 }

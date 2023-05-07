@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"workspace/helper"
-	rpc_struct "workspace/struct/rpc_struct"
+	helper "workspace/src/helper"
+	rpc_struct "workspace/src/struct/rpc_struct"
 )
 
 type Distribited_Servers struct{}
@@ -22,7 +22,7 @@ func main() {
 	if len(os.Args) != 2 {
 		os.Exit(1)
 	} else {
-		log_path = "vm" + os.Args[1] + ".log"
+		log_path = "./testdata/MP1/" + "vm" + os.Args[1] + ".log"
 	}
 
 	service := new(Distribited_Servers)

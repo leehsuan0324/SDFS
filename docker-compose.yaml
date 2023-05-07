@@ -1,0 +1,36 @@
+version: '3'
+
+services:
+  vm1:
+    image: "golang:latest"
+    # ports:
+    #   - '9487:9487'
+    working_dir: "/code"
+    volumes:
+      - "./:/code"
+    environment:
+      - MACHINE_NUM=1
+    entrypoint: ["/bin/bash", "./start_up.sh"]
+  vm2:
+    image: "golang:latest"
+    # ports:
+    #   - '9487:9487'
+    working_dir: "/code"
+    volumes:
+      - "./:/code"
+    environment:
+      - MACHINE_NUM=2
+    entrypoint: ["/bin/bash", "./start_up.sh"]
+  vm3:
+    image: "golang:latest"
+    # ports:
+    #   - '9487:9487'
+    working_dir: "/code"
+    volumes:
+      - "./:/code"
+    environment:
+      - MACHINE_NUM=3
+    entrypoint: ["/bin/bash", "./start_up.sh"]
+    #./start_up.sh 
+    # go run ./src/ciient/*.go "[a-zA-Z0-9]*o
+  
