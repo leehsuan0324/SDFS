@@ -37,7 +37,7 @@ func udp_connection_management() {
 		}
 		// logger.Printf("\n===== Alive List =====\n%v\n====== Present =======\n", UCM.alive_list)
 		fmt.Printf("\n===== Alive List =====\n%v\n====== Present =======\n", UCM.alive_list)
-		time.Sleep(1 * time.Second)
+		time.Sleep(1*time.Second + 500*time.Millisecond)
 	}
 }
 func find_connection() {
@@ -51,7 +51,6 @@ func find_connection() {
 		UCM.pos = 1
 	}
 	UCM.send_task_mutex.Unlock()
-
 }
 func udp_send_server(listener *net.UDPConn) {
 	var pos, cnt, version int
@@ -161,7 +160,7 @@ func udp_ping_server(listener *net.UDPConn, dst *net.UDPAddr, state int) bool {
 		}
 
 		listener.WriteToUDP([]byte(msg), dst)
-		listener.SetReadDeadline(time.Now().Add(250 * time.Millisecond))
+		listener.SetReadDeadline(time.Now().Add(400 * time.Millisecond))
 		// logger.Printf("[INFO] udp_ping_server: Sent msg %v\n", msg)
 		for {
 			if get {

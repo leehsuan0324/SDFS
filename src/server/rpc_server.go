@@ -98,15 +98,16 @@ func (t *Distribited_Servers) Node_rejoin(num int, response *int) error {
 		*response = 1
 		for i := 1; i < len(UCM.alive_list); i++ {
 			if i == _server.host_num {
-				UCM.alive_list_mutexs[i].Lock()
-				UCM.alive_list[i] = 1
-				UCM.alive_list_mutexs[i].Unlock()
+
 			} else {
 				UCM.alive_list_mutexs[i].Lock()
 				UCM.alive_list[i] = 0
 				UCM.alive_list_mutexs[i].Unlock()
 			}
 		}
+		UCM.alive_list_mutexs[_server.host_num].Lock()
+		UCM.alive_list[_server.host_num] = 1
+		UCM.alive_list_mutexs[_server.host_num].Unlock()
 	} else {
 		*response = 0
 	}
