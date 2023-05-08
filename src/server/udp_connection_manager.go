@@ -10,7 +10,7 @@ import (
 )
 
 type udp_connection_managemer struct {
-	alive_list                               []int
+	alive_list                               []int8
 	alive_list_mutexs                        []*sync.Mutex
 	recieve_server                           *net.UDPConn
 	send_server1, send_server2, send_server3 *net.UDPConn
@@ -133,7 +133,7 @@ func udp_update_server() {
 			go node_update(n, data)
 
 			UCM.alive_list_mutexs[0].Lock()
-			UCM.alive_list[0] = _server.host_num
+			UCM.alive_list[0] = int8(_server.host_num)
 			msg, err := json.Marshal(UCM.alive_list)
 			UCM.alive_list_mutexs[0].Unlock()
 
@@ -148,7 +148,7 @@ func udp_update_server() {
 func udp_ping_server(listener *net.UDPConn, dst *net.UDPAddr, state int) bool {
 
 	UCM.alive_list_mutexs[0].Lock()
-	UCM.alive_list[0] = state
+	UCM.alive_list[0] = int8(state)
 	msg, err := json.Marshal(UCM.alive_list)
 	UCM.alive_list_mutexs[0].Unlock()
 	CheckError(err)
@@ -193,7 +193,7 @@ func udp_ping_server(listener *net.UDPConn, dst *net.UDPAddr, state int) bool {
 
 }
 func node_update(n int, data [128]byte) {
-	var other_alive_list []int
+	var other_alive_list []int8
 
 	json.Unmarshal(data[:n], &other_alive_list)
 	// logger.Printf("Recieve %v. Update\n", other_alive_list)
@@ -204,10 +204,10 @@ func node_update(n int, data [128]byte) {
 		}
 	} else {
 		// logger.Printf("A Msg, Update One\n")
-		alive_list_update(other_alive_list[0], other_alive_list[other_alive_list[0]])
+		alive_list_update(int(other_alive_list[0]), other_alive_list[other_alive_list[0]])
 	}
 }
-func alive_list_update(pos int, status int) {
+func alive_list_update(pos int, status int8) {
 	updated := false
 	switch UCM.alive_list[pos] {
 	case -4:
@@ -235,13 +235,13 @@ func alive_list_update(pos int, status int) {
 		if status == 1 && pos != _server.host_num {
 			updated = true
 			UCM.alive_list_mutexs[pos].Lock()
-			UCM.alive_list[pos] = status
+			UCM.alive_list[pos] = int8(status)
 			UCM.alive_list_mutexs[pos].Unlock()
 		}
 	case 0:
 		updated = true
 		UCM.alive_list_mutexs[pos].Lock()
-		UCM.alive_list[pos] = status
+		UCM.alive_list[pos] = int8(status)
 		UCM.alive_list_mutexs[pos].Unlock()
 	case 1:
 		if pos == _server.host_num && status == 1 {
@@ -306,7 +306,7 @@ func udp_connection_management_init() {
 	for i := range UCM.alive_list_mutexs {
 		UCM.alive_list_mutexs[i] = &sync.Mutex{}
 	}
-	UCM.alive_list = make([]int, len(servers))
+	UCM.alive_list = make([]int8, len(servers))
 
 	for i := 1; i < len(servers); i++ {
 		UCM.alive_list[i] = 0
