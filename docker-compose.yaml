@@ -75,6 +75,56 @@ services:
     entrypoint: ["/bin/bash", "./start_up.sh"]
     #./start_up.sh 
     # go run ./src/ciient/*.go "[a-zA-Z0-9]*o
+  machine.07:
+    image: "golang:latest"
+    networks:
+      ithelp_application:
+          ipv4_address: 172.28.0.7
+    working_dir: "/code"
+    volumes:
+      - "./:/code"
+    environment:
+      - MACHINE_NUM=7
+    entrypoint: ["/bin/bash", "./start_up.sh"]
+    #./start_up.sh 
+    # go run ./src/ciient/*.go "[a-zA-Z0-9]*o
+  machine.08:
+    image: "golang:latest"
+    networks:
+      ithelp_application:
+          ipv4_address: 172.28.0.8
+    working_dir: "/code"
+    volumes:
+      - "./:/code"
+    environment:
+      - MACHINE_NUM=8
+    entrypoint: ["/bin/bash", "./start_up.sh"]
+    #./start_up.sh 
+    # go run ./src/ciient/*.go "[a-zA-Z0-9]*o
+  machine.09:
+    image: "golang:latest"
+    networks:
+      ithelp_application:
+          ipv4_address: 172.28.0.9
+    working_dir: "/code"
+    volumes:
+      - "./:/code"
+    environment:
+      - MACHINE_NUM=9
+    entrypoint: ["/bin/bash", "./start_up.sh"]
+    #./start_up.sh 
+    # go run ./src/ciient/*.go "[a-zA-Z0-9]*o
+  machine.10:
+    image: "golang:latest"
+    networks:
+      ithelp_application:
+          ipv4_address: 172.28.0.10
+    working_dir: "/code"
+    volumes:
+      - "./:/code"
+    environment:
+      - MACHINE_NUM=10
+    entrypoint: ["/bin/bash", "./start_up.sh"]
 networks:
     ithelp_application:
         driver: bridge

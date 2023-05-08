@@ -38,9 +38,6 @@ func File_2_string(path string) string {
 	return string(f)
 }
 
-//	func LogInfo(information string) {
-//		fmt.Printf("[INFO] %s\n", information)
-//	}
 func Load_config() []configstruct.Node {
 
 	var log_servers []configstruct.Node

@@ -107,7 +107,6 @@ func (t *Distribited_Servers) Node_rejoin(num int, response *int) error {
 				UCM.alive_list_mutexs[i].Unlock()
 			}
 		}
-
 	} else {
 		*response = 0
 	}

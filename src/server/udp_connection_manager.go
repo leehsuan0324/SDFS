@@ -36,7 +36,7 @@ func udp_connection_management() {
 			find_connection()
 		}
 		// logger.Printf("\n===== Alive List =====\n%v\n====== Present =======\n", UCM.alive_list)
-		// fmt.Printf("\n===== Alive List =====\n%v\n====== Present =======\n", UCM.alive_list)
+		fmt.Printf("\n===== Alive List =====\n%v\n====== Present =======\n", UCM.alive_list)
 		time.Sleep(1 * time.Second)
 	}
 }
@@ -95,8 +95,9 @@ func udp_send_server(listener *net.UDPConn) {
 				logger.Printf("[WARN] send_server %v Fail Connect to %v\n", listener.LocalAddr().String(), servers[pos].Host)
 
 				UCM.alive_list_mutexs[pos].Lock()
-				UCM.alive_list[pos] = -4
+				UCM.alive_list[pos] = -5
 				UCM.alive_list_mutexs[pos].Unlock()
+				log_update()
 				// ips, err := net.LookupIP(servers[pos].Host)
 				// if err == nil {
 				// 	servers[pos].Ip = ips[0].String()
@@ -129,7 +130,7 @@ func udp_update_server() {
 		n, addr, err := UCM.recieve_server.ReadFromUDP(data[:])
 		CheckError(err)
 		if n > 0 {
-			logger.Printf("[INFO] udp_update_server: Get msg from %v\n", UCM.recieve_server.LocalAddr().String())
+			logger.Printf("[INFO] udp_update_server: Get msg from %v\n", addr)
 			go node_update(n, data)
 
 			UCM.alive_list_mutexs[0].Lock()
@@ -208,20 +209,46 @@ func node_update(n int, data [128]byte) {
 	}
 }
 func alive_list_update(pos int, status int8) {
+	if status == 0 {
+		return
+	}
+
 	updated := false
 	switch UCM.alive_list[pos] {
+	case -5:
+		if status == -5 || status == 1 {
+			updated = true
+			UCM.alive_list_mutexs[pos].Lock()
+			UCM.alive_list[pos] = status
+			UCM.alive_list_mutexs[pos].Unlock()
+		} else {
+			updated = true
+			UCM.alive_list_mutexs[pos].Lock()
+			UCM.alive_list[pos] = -4
+			UCM.alive_list_mutexs[pos].Unlock()
+		}
 	case -4:
-		if status != -4 {
+		if status == -5 || status == 1 {
+			updated = true
+			UCM.alive_list_mutexs[pos].Lock()
+			UCM.alive_list[pos] = status
+			UCM.alive_list_mutexs[pos].Unlock()
+		} else {
 			updated = true
 			UCM.alive_list_mutexs[pos].Lock()
 			UCM.alive_list[pos] = -3
 			UCM.alive_list_mutexs[pos].Unlock()
 		}
 	case -3:
-		if (status == 1 || status == 2) && pos != _server.host_num {
+		if status == 5 || status == 1 {
 			updated = true
 			UCM.alive_list_mutexs[pos].Lock()
-			UCM.alive_list[pos] = 1
+			UCM.alive_list[pos] = status
+			UCM.alive_list_mutexs[pos].Unlock()
+		} else if status == 2 {
+			updated = true
+			UCM.alive_list_mutexs[pos].Lock()
+			UCM.alive_list[pos] = 0
 			UCM.alive_list_mutexs[pos].Unlock()
 		}
 	case -2:
@@ -256,10 +283,10 @@ func alive_list_update(pos int, status int8) {
 			UCM.alive_list_mutexs[pos].Unlock()
 		}
 	case 2:
-		if pos != _server.host_num && (status == -4) {
+		if pos != _server.host_num && (status < -3) {
 			updated = true
 			UCM.alive_list_mutexs[pos].Lock()
-			UCM.alive_list[pos] = -3
+			UCM.alive_list[pos] = status
 			UCM.alive_list_mutexs[pos].Unlock()
 		} else if pos != _server.host_num && (status == -2) {
 			updated = true
