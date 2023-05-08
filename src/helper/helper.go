@@ -3,8 +3,10 @@ package helper
 import (
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"strings"
+	configstruct "workspace/src/struct/config_struct"
 )
 
 func CheckError(err error) bool {
@@ -34,4 +36,35 @@ func File_2_string(path string) string {
 	f, err := ioutil.ReadFile(path)
 	ExitError(err)
 	return string(f)
+}
+
+//	func LogInfo(information string) {
+//		fmt.Printf("[INFO] %s\n", information)
+//	}
+func Load_config() []configstruct.Node {
+
+	var log_servers []configstruct.Node
+	log_servers = append(log_servers, configstruct.Node{})
+
+	raw_log_servers := strings.Split(File_2_string("./configs/log_server.conf"), "\n")
+
+	for _, raw_log_server := range raw_log_servers {
+		server_info := strings.Split(raw_log_server, ",")
+		ips, err := net.LookupIP(server_info[0])
+		if err != nil {
+			// fmt.Fprintf(os.Stderr, "Could not get IPs: %v. Use Pre-write-in IP\n", err)
+			log_servers = append(log_servers, configstruct.Node{Ip: server_info[1], Rpc_Port: server_info[2], Host: server_info[0]})
+		} else {
+			// fmt.Fprintf(os.Stdout, "Get IPs: %v\n", ips[0].String())
+			log_servers = append(log_servers, configstruct.Node{Ip: ips[0].String(), Rpc_Port: server_info[2], Host: server_info[0]})
+		}
+	}
+	// fmt.Printf("%v\n", log_servers)
+	return log_servers
+}
+func Min(x, y int) int {
+	if x < y {
+		return x
+	}
+	return y
 }

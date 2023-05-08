@@ -71,6 +71,6 @@ def gen_random(length):
 
 if __name__ == '__main__':
 	random.seed(12450)
-	for i in range(1, 4):
+	for i in range(1, 7):
 		logfile = 'machine.' + str(i).zfill(2) + '.log'
 		gen_log(logfile, 10000, i)

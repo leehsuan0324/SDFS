@@ -1,30 +1,33 @@
 version: '3'
 
 services:
-  vm1:
+  machine.01:
     image: "golang:latest"
-    # ports:
-    #   - '9487:9487'
+    networks:
+      ithelp_application:
+          ipv4_address: 172.28.0.1
     working_dir: "/code"
     volumes:
       - "./:/code"
     environment:
       - MACHINE_NUM=1
     entrypoint: ["/bin/bash", "./start_up.sh"]
-  vm2:
+  machine.02:
     image: "golang:latest"
-    # ports:
-    #   - '9487:9487'
+    networks:
+      ithelp_application:
+          ipv4_address: 172.28.0.2
     working_dir: "/code"
     volumes:
       - "./:/code"
     environment:
       - MACHINE_NUM=2
     entrypoint: ["/bin/bash", "./start_up.sh"]
-  vm3:
+  machine.03:
     image: "golang:latest"
-    # ports:
-    #   - '9487:9487'
+    networks:
+      ithelp_application:
+          ipv4_address: 172.28.0.3
     working_dir: "/code"
     volumes:
       - "./:/code"
@@ -33,4 +36,50 @@ services:
     entrypoint: ["/bin/bash", "./start_up.sh"]
     #./start_up.sh 
     # go run ./src/ciient/*.go "[a-zA-Z0-9]*o
-  
+  machine.04:
+    image: "golang:latest"
+    networks:
+      ithelp_application:
+          ipv4_address: 172.28.0.4
+    working_dir: "/code"
+    volumes:
+      - "./:/code"
+    environment:
+      - MACHINE_NUM=4
+    entrypoint: ["/bin/bash", "./start_up.sh"]
+    #./start_up.sh 
+    # go run ./src/ciient/*.go "[a-zA-Z0-9]*o
+  machine.05:
+    image: "golang:latest"
+    networks:
+      ithelp_application:
+          ipv4_address: 172.28.0.5
+    working_dir: "/code"
+    volumes:
+      - "./:/code"
+    environment:
+      - MACHINE_NUM=5
+    entrypoint: ["/bin/bash", "./start_up.sh"]
+    #./start_up.sh 
+    # go run ./src/ciient/*.go "[a-zA-Z0-9]*o
+  machine.06:
+    image: "golang:latest"
+    networks:
+      ithelp_application:
+          ipv4_address: 172.28.0.6
+    working_dir: "/code"
+    volumes:
+      - "./:/code"
+    environment:
+      - MACHINE_NUM=6
+    entrypoint: ["/bin/bash", "./start_up.sh"]
+    #./start_up.sh 
+    # go run ./src/ciient/*.go "[a-zA-Z0-9]*o
+networks:
+    ithelp_application:
+        driver: bridge
+        ipam:
+            driver: default
+            config:
+                - subnet: 172.28.0.0/16
+                  gateway: 172.28.0.254

@@ -1,7 +1,7 @@
 package rpc_struct
 
 type LogQueryRequest struct {
-	Param, Host string
+	Param string
 }
 type LogQueryResponse struct {
 	Result string

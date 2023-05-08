@@ -1,98 +1,60 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"net"
-	"net/rpc"
+	"log"
 	"os"
-	"os/exec"
-	"regexp"
 	"strconv"
-	"strings"
+	"sync"
 	helper "workspace/src/helper"
-	rpc_struct "workspace/src/struct/rpc_struct"
+	configstruct "workspace/src/struct/config_struct"
 )
 
 type Distribited_Servers struct{}
 
-var log_path string
+type server_info struct {
+	log       string
+	log_path  string
+	host_name string
+	host_num  int
+}
+
+var _server server_info
+var servers []configstruct.Node
+var rpc_server_wg sync.WaitGroup
+var logger *log.Logger
 
 func main() {
 	if len(os.Args) != 2 {
 		os.Exit(1)
-	} else {
-		log_path = "./testdata/MP1/" + "vm" + os.Args[1] + ".log"
 	}
-	go log_query_server()
+
+	_server.host_num, _ = strconv.Atoi(os.Args[1])
+	_server.host_name = fmt.Sprintf("machine.%02d", _server.host_num)
+	_server.log_path = "./testdata/MP1/" + _server.host_name + ".log"
+	_server.log = "./log/" + _server.host_name + ".log"
+	// fmt.Printf("Success to set _server %v\n", _server)
+
+	f, err := os.OpenFile(_server.log, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("open file error=%v", err)
+	}
+	defer f.Close()
+	logger = log.New(f, "", log.Ldate|log.Ltime)
+
+	server_init()
+
+	rpc_server_wg.Add(1)
+	go rpc_server()
+	rpc_server_wg.Wait()
+
+	go udp_connection_management()
 	for {
 	}
 }
-func log_query_server() {
-	service := new(Distribited_Servers)
-	rpc.Register(service)
+func server_init() {
 
-	tcpAddr, err := net.ResolveTCPAddr("tcp", ":9487")
-	helper.ExitError(err)
-
-	listener, err := net.ListenTCP("tcp", tcpAddr)
-	helper.ExitError(err)
-
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			continue
-		}
-		go rpc.ServeConn(conn)
-	}
-}
-func (t *Distribited_Servers) Grep(req rpc_struct.LogQueryRequest, res *rpc_struct.LogQueryResponse) error {
-
-	params := strings.Split(req.Param, " ")
-	params = append(params, log_path)
-	fmt.Println("args: ", params)
-
-	cmd := exec.Command("/usr/bin/grep", params...)
-	resultsBytes, err := cmd.CombinedOutput()
-
-	if !helper.CheckError(err) {
-		res.Result = string(resultsBytes)
-	} else {
-		res.Result = string(resultsBytes)
-		res.Line = strings.Count(res.Result, "\n")
-	}
-
-	return nil
-}
-
-func (t *Distribited_Servers) Search_log(req rpc_struct.LogQueryRequest, res *rpc_struct.LogQueryResponse) error {
-
-	r := regexp.MustCompile("(" + req.Param + ")")
-
-	file, err := os.Open(log_path)
-	helper.ExitError(err)
-	defer file.Close()
-	temp := ""
-	line := 1
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		if r.MatchString(scanner.Text()) {
-			test := r.ReplaceAllString(scanner.Text(), "\033[35m$1\033[0m")
-			temp += "[" + req.Host + "] " + log_path + " " + strconv.Itoa(line) + " " + test + "\n"
-			res.Line++
-		}
-		line++
-	}
-
-	helper.ExitError(scanner.Err())
-
-	res.Result = temp
-
-	return nil
-}
-func (t *Distribited_Servers) Ack() {
-
-}
-func (t *Distribited_Servers) Update() {
-
+	servers = helper.Load_config()
+	logger.Printf("[INFO] Load config Success\n")
+	fmt.Printf("%v\n", servers)
 }

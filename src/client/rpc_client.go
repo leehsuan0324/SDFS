@@ -2,13 +2,12 @@ package main
 
 import (
 	"fmt"
-	"net"
 	"net/rpc"
 	"os"
-	"strings"
 	"sync"
 	"time"
 	helper "workspace/src/helper"
+	configstruct "workspace/src/struct/config_struct"
 	rpc_struct "workspace/src/struct/rpc_struct"
 )
 
@@ -30,29 +29,21 @@ func main() {
 	hosts_statistic = make(map[string]*rpc_struct.LogQueryResponse)
 	m = new(sync.Mutex)
 
-	raw_log_servers := strings.Split(helper.File_2_string("./configs/log_server.conf"), "\n")
-	log_servers := map[string]Node{}
-	for _, raw_log_server := range raw_log_servers {
-		server_info := strings.Split(raw_log_server, ",")
-		log_servers[server_info[0]] = Node{Ip: server_info[1], Port: server_info[2]}
-		ips, err := net.LookupIP(server_info[0])
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Could not get IPs: %v. Use Pre-write-in IP\n", err)
-			log_servers[server_info[0]] = Node{Ip: server_info[1], Port: server_info[2]}
-		} else {
-			log_servers[server_info[0]] = Node{Ip: ips[0].String(), Port: server_info[2]}
-		}
-	}
+	var log_servers []configstruct.Node
+	log_servers = helper.Load_config()
+	fmt.Printf("%v\n", log_servers)
 
 	start := time.Now()
-	wg.Add(len(log_servers))
+	wg.Add(len(log_servers) - 1)
 
-	for _host, log_server := range log_servers {
-		service := fmt.Sprintf("%s:%s", log_server.Ip, log_server.Port)
-		go rpc_request(param, _host, service)
+	for i := 1; i < len(log_servers); i++ {
+
+		service := fmt.Sprintf("%s:%s", log_servers[i].Ip, log_servers[i].Rpc_Port)
+		go rpc_request(param, log_servers[i].Host, service)
 	}
 
 	wg.Wait()
+	fmt.Printf("Success to get response\n")
 	elapsed := time.Since(start)
 	sum := 0
 	for host, logqueryresponse := range hosts_statistic {
@@ -73,8 +64,9 @@ func rpc_request(param string, host string, service string) {
 		fmt.Printf("Fail to connect to %s\n", host)
 		return
 	}
+	fmt.Printf("Success to connect to %s\n", host)
 
-	args := rpc_struct.LogQueryRequest{Param: param, Host: host}
+	args := rpc_struct.LogQueryRequest{Param: param}
 
 	m.Lock()
 	hosts_statistic[host] = &rpc_struct.LogQueryResponse{Time: "", Line: 0, Result: ""}
@@ -87,6 +79,7 @@ func rpc_request(param string, host string, service string) {
 	elapsed := time.Since(start)
 	response.Time = elapsed.String()
 
+	// fmt.Printf("Success to get response %s\n", response.Result)
 	m.Lock()
 	hosts_statistic[host] = &response
 	m.Unlock()

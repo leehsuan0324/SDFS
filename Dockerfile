@@ -3,4 +3,4 @@ WORKDIR /code
 COPY . /code/
 # CMD cd /code
 CMD ["sleep", "infinity"]
-CMD [ "go", "run" ,"./src/server/*.go", "${MACHINE_NUM}" ]
+#CMD [ "go", "run" ,"./src/server/*.go", "${MACHINE_NUM}" ]
