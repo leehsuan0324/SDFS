@@ -60,7 +60,7 @@ func (t *Distribited_Servers) Search_log(req rpc_struct.LogQueryRequest, res *rp
 	r := regexp.MustCompile("(" + req.Param + ")")
 
 	file, err := os.Open(_server.log_path)
-	ExitError(err)
+	CheckError(err)
 	defer file.Close()
 	temp := ""
 	line := 1
@@ -74,43 +74,9 @@ func (t *Distribited_Servers) Search_log(req rpc_struct.LogQueryRequest, res *rp
 		line++
 	}
 
-	ExitError(scanner.Err())
+	CheckError(scanner.Err())
 
 	res.Result = temp
-
-	return nil
-}
-func (t *Distribited_Servers) Node_leave(num int, response *int) error {
-	logger.Printf("[INFO] Got leave req\n")
-	if UCM.alive_list[_server.host_num] != -1 {
-		UCM.alive_list_mutexs[_server.host_num].Lock()
-		UCM.alive_list[_server.host_num] = -2
-		UCM.alive_list_mutexs[_server.host_num].Unlock()
-		*response = 1
-	} else {
-		*response = 0
-	}
-	return nil
-}
-func (t *Distribited_Servers) Node_rejoin(num int, response *int) error {
-	logger.Printf("[INFO] Got rejoin req\n")
-	if UCM.alive_list[_server.host_num] == -1 {
-		*response = 1
-		for i := 1; i < len(UCM.alive_list); i++ {
-			if i == _server.host_num {
-
-			} else {
-				UCM.alive_list_mutexs[i].Lock()
-				UCM.alive_list[i] = 0
-				UCM.alive_list_mutexs[i].Unlock()
-			}
-		}
-		UCM.alive_list_mutexs[_server.host_num].Lock()
-		UCM.alive_list[_server.host_num] = 1
-		UCM.alive_list_mutexs[_server.host_num].Unlock()
-	} else {
-		*response = 0
-	}
 
 	return nil
 }

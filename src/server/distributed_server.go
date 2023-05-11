@@ -35,7 +35,7 @@ func main() {
 	_server.log = "./log/" + _server.host_name + ".log"
 	// fmt.Printf("Success to set _server %v\n", _server)
 
-	f, err := os.OpenFile(_server.log, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	f, err := os.OpenFile(_server.log, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
 		log.Fatalf("open file error=%v", err)
 	}
