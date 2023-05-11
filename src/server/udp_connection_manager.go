@@ -64,9 +64,9 @@ const (
 	Leave
 )
 
-func udp_connection_management() {
-	udp_connection_management_init()
-	defer udp_connection_management_end()
+func membership_manager() {
+	membership_manager_init()
+	defer membership_manager_end()
 	go udp_receiver()
 	go udp_sender(UCM.send_server1)
 	go udp_sender(UCM.send_server2)
@@ -94,10 +94,11 @@ func udp_connection_management() {
 					create_sync_job(Tablesync_request, int8(k[0]))
 				}
 			}
-
-			fmt.Printf("\n===== Alive List =====\n")
-			for i := 1; i < len(servers); i++ {
-				fmt.Printf("%v %v %v\n", servers[i].Host, UCM.alive_list[i].Id, status_string[UCM.alive_list[i].Status])
+			if UCM.alive_list[_server.host_num].Status != Leave {
+				fmt.Printf("\n===== Alive List =====\n")
+				for i := 1; i < len(servers); i++ {
+					fmt.Printf("%v %v %v\n", servers[i].Host, UCM.alive_list[i].Id, status_string[UCM.alive_list[i].Status])
+				}
 			}
 		}
 		cnt++
@@ -203,7 +204,7 @@ func update_manager() {
 			}
 			UCM.alive_list[_server.host_num].Timestamp = time.Now().UnixMilli()
 			if UCM.alive_list[_server.host_num].Status == Joining {
-				logger.Printf("[INFO] Update Joining to Running\n")
+				logger.Printf("[INFO] Update %v from Joining to Running\n", servers[_server.host_num].Host)
 				UCM.alive_list[_server.host_num].Status = Running
 				create_job(Update_request, int8(_server.host_num))
 			}
@@ -384,6 +385,8 @@ func create_sync_job(job_num int8, des_host int8) {
 func alive_list_update(result *udp_connection_packet, target int8, src int8) bool {
 	updated := false
 	if UCM.alive_list[target].Timestamp == 0 {
+		updated = true
+		logger.Printf("[INFO] Update %v's status from %v to %v\n", servers[target].Host, status_string[UCM.alive_list[target].Status], status_string[result.Data[src].Status])
 		UCM.alive_list[target] = result.Data[src]
 	} else {
 		if result.Data[src].Timestamp > UCM.alive_list[target].Timestamp {
@@ -400,7 +403,7 @@ func alive_list_update(result *udp_connection_packet, target int8, src int8) boo
 	}
 	return updated
 }
-func udp_connection_management_init() {
+func membership_manager_init() {
 	UCM = udp_connection_managemer{}
 	UCM.alive_list = make([]machine_status, len(servers))
 	UCM.machine_id = make([]int, len(servers))
@@ -443,7 +446,7 @@ func udp_connection_management_init() {
 	logger.Printf("Init Alive list %v\n", UCM.alive_list)
 }
 
-func udp_connection_management_end() {
+func membership_manager_end() {
 	UCM.send_server1.Close()
 	UCM.send_server2.Close()
 	UCM.send_server3.Close()

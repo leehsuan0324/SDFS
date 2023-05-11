@@ -48,7 +48,7 @@ func main() {
 	go rpc_server()
 	rpc_server_wg.Wait()
 
-	go udp_connection_management()
+	go membership_manager()
 	for {
 	}
 }
