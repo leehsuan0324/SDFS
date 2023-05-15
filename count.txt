@@ -102,3 +102,83 @@ rare_pattern_on_7:0
 somewhat_freq:2004
 frequent_pattern:7511
 
+Count from machine {01}
+only_found_on_odd:0
+third_and_ninth:0
+boring_message:477
+rare_pattern_on_7:0
+somewhat_freq:2052
+frequent_pattern:7471
+
+Count from machine {02}
+only_found_on_odd:501
+third_and_ninth:0
+boring_message:0
+rare_pattern_on_7:0
+somewhat_freq:2047
+frequent_pattern:7452
+
+Count from machine {03}
+only_found_on_odd:0
+third_and_ninth:489
+boring_message:0
+rare_pattern_on_7:0
+somewhat_freq:1983
+frequent_pattern:7528
+
+Count from machine {04}
+only_found_on_odd:501
+third_and_ninth:0
+boring_message:0
+rare_pattern_on_7:0
+somewhat_freq:2023
+frequent_pattern:7476
+
+Count from machine {05}
+only_found_on_odd:0
+third_and_ninth:0
+boring_message:471
+rare_pattern_on_7:0
+somewhat_freq:2039
+frequent_pattern:7490
+
+Count from machine {06}
+only_found_on_odd:485
+third_and_ninth:0
+boring_message:0
+rare_pattern_on_7:0
+somewhat_freq:2004
+frequent_pattern:7511
+
+Count from machine {07}
+only_found_on_odd:0
+third_and_ninth:0
+boring_message:0
+rare_pattern_on_7:491
+somewhat_freq:2061
+frequent_pattern:7448
+
+Count from machine {08}
+only_found_on_odd:486
+third_and_ninth:0
+boring_message:0
+rare_pattern_on_7:0
+somewhat_freq:1973
+frequent_pattern:7541
+
+Count from machine {09}
+only_found_on_odd:0
+third_and_ninth:527
+boring_message:0
+rare_pattern_on_7:0
+somewhat_freq:2022
+frequent_pattern:7451
+
+Count from machine {10}
+only_found_on_odd:483
+third_and_ninth:0
+boring_message:0
+rare_pattern_on_7:0
+somewhat_freq:1941
+frequent_pattern:7576
+

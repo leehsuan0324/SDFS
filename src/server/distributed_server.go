@@ -31,7 +31,7 @@ func main() {
 
 	_server.host_num, _ = strconv.Atoi(os.Args[1])
 	_server.host_name = fmt.Sprintf("machine.%02d", _server.host_num)
-	_server.log_path = "./testdata/MP1/" + _server.host_name + ".log"
+	_server.log_path = "/tmp/machine.log"
 	_server.log = "./log/" + _server.host_name + ".log"
 	// fmt.Printf("Success to set _server %v\n", _server)
 

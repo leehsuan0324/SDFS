@@ -9,9 +9,9 @@ import (
 )
 
 type machine_status struct {
-	Status      int8
-	Timestamp   int64
-	Incarnation int32
+	Status    int8
+	Timestamp int64
+	Id        int64
 }
 type udp_connection_packet struct {
 	Flag [4]int8
@@ -66,14 +66,13 @@ const (
 // Leaving: Decrepit.
 // Leave: Node leave the ring by itself.
 const (
-	Unknown int8 = iota
+	Failure int8 = iota
+	Unknown
 	Joining
+	Joined
 	Running
-	Suspicious
-	Failure
 	Leaving
-	Left
-	Deleted
+	Leave
 )
 
 // Init the host state and start udp listener
@@ -97,14 +96,26 @@ func membership_manager() {
 	// Every three second, sync table with a friend if Running
 	for {
 
-		create_job(Ping_request, int8(_server.host_num))
-		create_update()
+		if UCM.alive_list[_server.host_num].Status == Joining {
+			create_job(Join_request, int8(_server.host_num))
+			create_job(Join_request, int8(_server.host_num))
+		} else if UCM.alive_list[_server.host_num].Status == Running {
+			create_job(Ping_request, int8(_server.host_num))
+		}
 
 		if cnt == 3 {
 			cnt = 0
-			fmt.Printf("\n===== Alive List =====\n")
-			for i := 1; i < len(servers); i++ {
-				fmt.Printf("%v %v %v\n", servers[i].Host, UCM.alive_list[i].Incarnation, status_string[UCM.alive_list[i].Status])
+			if UCM.alive_list[_server.host_num].Status == Running {
+				k := choose_k_alive_server(1)
+				if len(k) > 0 {
+					create_sync_job(Tablesync_request, int8(k[0]))
+				}
+			}
+			if UCM.alive_list[_server.host_num].Status != Leave {
+				fmt.Printf("\n===== Alive List =====\n")
+				for i := 1; i < len(servers); i++ {
+					fmt.Printf("%v %v %v\n", servers[i].Host, UCM.alive_list[i].Id, status_string[UCM.alive_list[i].Status])
+				}
 			}
 		}
 		cnt++
@@ -119,7 +130,21 @@ func task_manager() {
 	for {
 		job := <-UCM.job_channel
 
-		if job.Flag[J_type] == Ping_request {
+		if job.Flag[J_type] == Join_request && UCM.alive_list[_server.host_num].Status == Joining {
+
+			logger.Printf("[INFO] Get Join job.\n")
+
+			// Get three not Fail ot leave server.
+			alive_servers := choose_k_alive_server(1)
+
+			// create tasks which are assigned those servers as the dst of the packet.
+			for _, num := range alive_servers {
+				job.Flag[Dst_num] = int8(num)
+				job.Data = []machine_status{UCM.alive_list[_server.host_num]}
+
+				UCM.task_channel <- job
+			}
+		} else if job.Flag[J_type] == Ping_request {
 			// Ping Flag
 			logger.Printf("[INFO] Get Ping job.\n")
 			// Get three not Fail ot leave server.
@@ -127,9 +152,27 @@ func task_manager() {
 			// create tasks which are assigned those servers as the dst of the packet.
 			for _, num := range alive_servers {
 				job.Flag[Dst_num] = int8(num)
-				job.Data = UCM.alive_list
+				job.Data = []machine_status{UCM.alive_list[_server.host_num]}
+
 				UCM.task_channel <- job
 			}
+		} else if job.Flag[J_type] == Update_request && UCM.alive_list[_server.host_num].Status == Running {
+			// Update Flag
+			logger.Printf("[INFO] Get Update job.\n")
+			// Get three not Fail ot leave server.
+			alive_servers := choose_k_alive_server(3)
+			// create tasks which are assigned those servers as the dst of the packet.
+			for _, num := range alive_servers {
+				job.Flag[Dst_num] = int8(num)
+				job.Data = []machine_status{UCM.alive_list[job.Flag[P_target]]}
+
+				UCM.task_channel <- job
+			}
+		} else if job.Flag[J_type] == Tablesync_request {
+			logger.Printf("[INFO] Get Sync job.\n")
+			// create a task with a packet that have all alive list.
+			job.Data = UCM.alive_list
+			UCM.task_channel <- job
 		}
 	}
 }
@@ -142,69 +185,95 @@ func update_manager() {
 		result := <-UCM.result_channel
 		src := result.Flag[Src_num]
 		dst := result.Flag[Dst_num]
-		// target := result.Flag[P_target]
-		updated := 0
+		target := result.Flag[P_target]
+		updated := false
 
 		switch result.Flag[0] {
+		case Join_request:
+			if result.Data[0].Timestamp > UCM.alive_list[src].Timestamp {
+
+				updated = true
+				UCM.alive_list[src] = result.Data[0]
+				if UCM.alive_list[src].Timestamp != 0 {
+					create_sync_job(Tablesync_request, int8(src))
+					create_job(Update_request, int8(src))
+				}
+				logger.Printf("[INFO] Receive %v's Join request, Update %v and create sync/update job.\n", servers[src].Host, servers[src].Host)
+			} else {
+				logger.Printf("[INFO] Receive %v's Join request, No Need to update %v!\n", servers[src].Host, servers[target].Host)
+			}
+
+		case Join_response:
+			updated = alive_list_update(&result, src, 0)
 
 		case Ping_request:
-			// logger.Printf("[INFO] Receive Ping_request %v from %v.\n", result.Data, servers[src].Host)
-			for i := 1; i < len(UCM.alive_list); i++ {
-				updated += alive_list_update(&result, int8(i), int8(i))
-			}
-			if updated > 0 {
-				logger.Printf("[INFO] Receive Ping from %v, Alive List Updated.\n", servers[src].Host)
-			} else {
-				logger.Printf("[INFO] Receive Ping from %v, No Need to Update!\n", servers[src].Host)
-			}
+			updated = alive_list_update(&result, src, 0)
+
 		case Ping_response:
-			// logger.Printf("[INFO] Receive Ping_response %v from %v.\n", result.Data, servers[src].Host)
-			for i := 1; i < len(UCM.alive_list); i++ {
-				updated += alive_list_update(&result, int8(i), int8(i))
-			}
-			if updated > 0 {
-				logger.Printf("[INFO] Receive Ack from %v, Alive List Updated.\n", servers[src].Host)
-			} else {
-				logger.Printf("[INFO] Receive Ack from %v, No Need to Update!\n", servers[src].Host)
-			}
+			updated = alive_list_update(&result, src, 0)
+
 		case Update_request:
+			updated = alive_list_update(&result, target, 0)
+
+		case Update_response:
+			updated = alive_list_update(&result, src, 0)
+			// logger.Printf("[INFO] Receive Update response from %v\n", servers[src])
+		case Tablesync_request:
+			logger.Printf("[INFO] Receive %v's sync request, update all list\n", servers[src].Host)
 			for i := 1; i < len(UCM.alive_list); i++ {
-				if UCM.alive_list[i].Status == Suspicious && UCM.alive_list[i].Timestamp+2000 < time.Now().UnixMilli() {
-					UCM.alive_list[i].Status = Failure
-					UCM.alive_list[i].Timestamp = time.Now().UnixMilli()
-				} else if (UCM.alive_list[i].Status == Failure || UCM.alive_list[i].Status == Left) && UCM.alive_list[i].Timestamp+5000 < time.Now().UnixMilli() {
-					UCM.alive_list[i].Status = Deleted
-					UCM.alive_list[i].Timestamp = time.Now().UnixMilli()
+				if i != int(dst) {
+					updated = alive_list_update(&result, int8(i), int8(i))
 				}
 			}
-		case Leave_request:
-			UCM.alive_list[_server.host_num].Status = Left
 			UCM.alive_list[_server.host_num].Timestamp = time.Now().UnixMilli()
+			if UCM.alive_list[_server.host_num].Status == Joining {
+				logger.Printf("[INFO] Update %v from Joining to Running\n", servers[_server.host_num].Host)
+				UCM.alive_list[_server.host_num].Status = Running
+				create_job(Update_request, int8(_server.host_num))
+			}
+
+		case Tablesync_response:
+			updated = alive_list_update(&result, src, 0)
+
+		case Leave_request:
+			UCM.alive_list[_server.host_num].Status = Leave
+			UCM.alive_list[_server.host_num].Timestamp = time.Now().UnixMilli()
+			create_job(Update_request, int8(_server.host_num))
+		case Rejoin_request:
+			UCM.alive_list[_server.host_num].Status = Joining
+			UCM.alive_list[_server.host_num].Timestamp = time.Now().UnixMilli()
+			UCM.alive_list[_server.host_num].Id = time.Now().UnixMilli()
+			create_job(Update_request, int8(_server.host_num))
 
 		case Connection_fail:
-			if UCM.alive_list[dst].Status == Running || UCM.alive_list[dst].Status == Joining || UCM.alive_list[dst].Status == Unknown {
-				updated++
-				UCM.alive_list[dst].Status = Suspicious
-				UCM.alive_list[dst].Timestamp = time.Now().UnixMilli()
-			}
-			if updated > 0 {
-				logger.Printf("[INFO] Receive Connection Error from %v, Alive List Updated.\n", servers[src].Host)
-			} else {
-				logger.Printf("[INFO] Receive Connection Error from %v, No Need to Update!\n", servers[src].Host)
+			updated = true
+			UCM.alive_list[dst].Status = Failure
+			UCM.alive_list[dst].Timestamp = time.Now().UnixMilli()
+
+			if UCM.alive_list[dst].Timestamp != 0 {
+				logger.Printf("[INFO] Result: can't connect to %v. Create Update\n", servers[dst].Host)
+				create_job(Update_request, int8(dst))
 			}
 		}
 
+		if updated {
+			logger.Printf("[INFO] Receive %v, Alive List Updated. %v\n", result.Flag, UCM.alive_list)
+		} else {
+			logger.Printf("[INFO] Receive %v, %v No Need to Update!\n", result.Flag, servers[target].Host)
+		}
 	}
 }
 func udp_sender(listener *net.UDPConn) {
 	for {
 		task := <-UCM.task_channel
-		if UCM.alive_list[task.Flag[Dst_num]].Status == Failure || UCM.alive_list[task.Flag[Dst_num]].Status == Deleted || UCM.alive_list[task.Flag[Dst_num]].Status == Left {
+		if UCM.alive_list[task.Flag[Dst_num]].Status == Failure {
 			logger.Printf("Drop task %v\n", task)
 			continue
 		}
+
 		// logger.Printf("[INFO] %v: send %v\n", listener.LocalAddr().String(), task)
 		msg := EncodeToBytes(&task)
+
 		service := fmt.Sprintf("%s:%s", servers[task.Flag[2]].Ip, "19487")
 		dst, err := net.ResolveUDPAddr("udp", service)
 		CheckError(err)
@@ -229,6 +298,7 @@ func udp_sender(listener *net.UDPConn) {
 					break
 				}
 				if n > 0 {
+
 					result := DecodeToResult(data[:n])
 
 					if len(UCM.result_channel) == cap(UCM.result_channel) {
@@ -245,7 +315,6 @@ func udp_sender(listener *net.UDPConn) {
 		} else {
 			result := udp_connection_packet{Flag: task.Flag}
 			result.Flag[J_type] = Connection_fail
-			result.Flag[Src_num] = int8(_server.host_num)
 			if len(UCM.result_channel) == cap(UCM.result_channel) {
 				logger.Printf("result_channel is full. Skip this result\n")
 			} else {
@@ -266,7 +335,7 @@ func udp_receiver() {
 			// logger.Printf("[INFO] %v: Get %v (length %v) from %v\n", UCM.receive_server.LocalAddr().String(), result, n, addr)
 
 			if len(UCM.result_channel) == cap(UCM.result_channel) {
-				logger.Printf("[WARN] result_channel is full. Skip this result\n")
+				logger.Printf("result_channel is full. Skip this result\n")
 			} else {
 				UCM.result_channel <- result
 			}
@@ -276,7 +345,7 @@ func udp_receiver() {
 			result.Flag[Dst_num] = result.Flag[Src_num]
 			result.Flag[Src_num] = result.Flag[P_target]
 
-			result.Data = UCM.alive_list
+			result.Data = []machine_status{UCM.alive_list[result.Flag[Src_num]]}
 			msg := EncodeToBytes(&result)
 
 			_, err = UCM.receive_server.WriteToUDP(msg, addr)
@@ -295,7 +364,7 @@ func choose_k_alive_server(k int) []int {
 		if pos == len(servers) {
 			pos = 1
 		}
-		if UCM.alive_list[pos].Status != Failure && UCM.alive_list[pos].Status != Left && UCM.alive_list[pos].Status != Deleted {
+		if UCM.alive_list[pos].Status != Failure && UCM.alive_list[pos].Status != Leave {
 			alives = append(alives, pos)
 			cnt++
 		}
@@ -311,58 +380,34 @@ func create_job(job_num int8, target int8) {
 
 	UCM.job_channel <- job
 }
-func create_update() {
-	result := udp_connection_packet{}
-	result.Flag[J_type] = Update_request
+func create_sync_job(job_num int8, des_host int8) {
+	job := udp_connection_packet{}
+	job.Flag[J_type] = job_num
+	job.Flag[Src_num] = int8(_server.host_num)
+	job.Flag[Dst_num] = int8(des_host)
+	job.Flag[P_target] = 0
 
-	UCM.result_channel <- result
+	UCM.job_channel <- job
 }
-func alive_list_update(result *udp_connection_packet, target int8, position int8) int {
-	updated := 0
-
-	if position == int8(_server.host_num) {
-		if result.Data[position].Status == Failure || result.Data[position].Status == Left {
-			logger.Fatalf("%v. Stop the server.\n", status_string[result.Data[position].Status])
-		} else if result.Data[position].Status != UCM.alive_list[target].Status {
-			if result.Data[position].Incarnation > UCM.alive_list[target].Incarnation {
-				logger.Printf("[UPDATE] Receive self status which is not equal to me and incarnation higher than myself from %v, Increase incarnation to override!\n", servers[target].Host)
-				updated++
-				UCM.alive_list[target].Incarnation = result.Data[position].Incarnation + 1
-			} else if result.Data[position].Incarnation == UCM.alive_list[target].Incarnation && result.Data[position].Status > UCM.alive_list[target].Status {
-				logger.Printf("[UPDATE] Receive self status which is not equal to me and status prior than myself from %v, Increase incarnation to override!\n", servers[target].Host)
-				updated++
-				UCM.alive_list[target].Incarnation = result.Data[position].Incarnation + 1
-			}
-		} else {
-			if result.Data[position].Status == Joining {
-				UCM.alive_list[target].Status = Running
-				logger.Printf("[UPDATE] Update %v (myself) from Joining to Running\n", servers[position].Host)
-				if UCM.alive_list[target].Incarnation < result.Data[position].Incarnation {
-					UCM.alive_list[target].Incarnation = result.Data[position].Incarnation
-				}
-			}
-		}
+func alive_list_update(result *udp_connection_packet, target int8, src int8) bool {
+	updated := false
+	if UCM.alive_list[target].Timestamp == 0 {
+		updated = true
+		logger.Printf("[INFO] Update %v's status from %v to %v\n", servers[target].Host, status_string[UCM.alive_list[target].Status], status_string[result.Data[src].Status])
+		UCM.alive_list[target] = result.Data[src]
 	} else {
-		if result.Data[position].Status == Failure || result.Data[position].Status == Left {
-			if result.Data[position].Status > UCM.alive_list[target].Status {
-				logger.Printf("[UPDATE] Update %v from %v to %v", servers[position].Host, status_string[UCM.alive_list[target].Status], status_string[result.Data[position].Status])
-				updated++
-				UCM.alive_list[target].Status = result.Data[position].Status
-				UCM.alive_list[target].Incarnation = result.Data[position].Incarnation
-				UCM.alive_list[target].Timestamp = time.Now().UnixMilli()
-			}
-		} else if result.Data[position].Incarnation > UCM.alive_list[target].Incarnation {
-			logger.Printf("[UPDATE] Update %v from %v to %v\n", servers[position].Host, status_string[UCM.alive_list[target].Status], status_string[result.Data[position].Status])
-			updated++
-			UCM.alive_list[target].Status = result.Data[position].Status
-			UCM.alive_list[target].Incarnation = result.Data[position].Incarnation
-			UCM.alive_list[target].Timestamp = time.Now().UnixMilli()
-		} else if result.Data[position].Incarnation == UCM.alive_list[target].Incarnation {
-			if result.Data[position].Status > UCM.alive_list[target].Status {
-				logger.Printf("[UPDATE] Update %v from %v to %v", servers[position].Host, status_string[UCM.alive_list[target].Status], status_string[result.Data[position].Status])
-				updated++
-				UCM.alive_list[target].Status = result.Data[position].Status
-				UCM.alive_list[target].Timestamp = time.Now().UnixMilli()
+		if UCM.alive_list[target].Id == 0 {
+			UCM.alive_list[target].Id = result.Data[src].Id
+		}
+		if result.Data[src].Timestamp > UCM.alive_list[target].Timestamp {
+			UCM.alive_list[target].Timestamp = result.Data[src].Timestamp
+			UCM.alive_list[target].Id = result.Data[src].Id
+			if UCM.alive_list[target].Status != result.Data[src].Status {
+				logger.Printf("[INFO] Update %v's status from %v to %v\n", servers[target].Host, status_string[UCM.alive_list[target].Status], status_string[result.Data[src].Status])
+
+				updated = true
+				UCM.alive_list[target].Status = result.Data[src].Status
+				create_job(Update_request, int8(target))
 			}
 		}
 	}
@@ -377,7 +422,7 @@ func membership_manager_init() {
 	UCM.result_channel = make(chan udp_connection_packet, 90)
 	// UCM.udp_server_wg.Add(4)
 
-	status_string = []string{"Unknown", "Joining", "Running", "Suspicious", "Failure", "Leaving", "Left", "Deleted"}
+	status_string = []string{"Failure", "Unknown", "Joining", "Joined", "Running", "Leaving", "Leave"}
 
 	udpAddr, err := net.ResolveUDPAddr("udp", ":19487")
 	ExitError(err)
@@ -404,11 +449,10 @@ func membership_manager_init() {
 	logger.Printf("[INFO] udp_connection_management_init: ListenUDP Success %v\n", udpAddr)
 
 	for i := 1; i < len(servers); i++ {
-		UCM.alive_list[i] = machine_status{Status: Unknown, Timestamp: int64(0), Incarnation: -1}
+		UCM.alive_list[i] = machine_status{Unknown, int64(0), 0}
 	}
 
-	UCM.alive_list[_server.host_num].Status = Joining
-	UCM.alive_list[_server.host_num].Incarnation = 0
+	UCM.alive_list[_server.host_num] = machine_status{Status: Joining, Timestamp: time.Now().UnixMilli(), Id: time.Now().UnixMilli()}
 
 	logger.Printf("Init Alive list %v\n", UCM.alive_list)
 }
@@ -433,25 +477,26 @@ func (t *Distribited_Servers) Node_leave(num int, response *int) error {
 	} else {
 		*response = 0
 	}
+
 	return nil
 }
+func (t *Distribited_Servers) Node_rejoin(num int, response *int) error {
+	logger.Printf("[INFO] Got rejoin req\n")
+	if UCM.alive_list[_server.host_num].Status == Leave {
+		*response = 1
+		result := udp_connection_packet{}
+		result.Flag[J_type] = Rejoin_request
+		UCM.alive_list[_server.host_num].Id = time.Now().UnixMilli()
+		UCM.result_channel <- result
+	} else {
+		*response = 0
+	}
 
-// func (t *Distribited_Servers) Node_rejoin(num int, response *int) error {
-// 	logger.Printf("[INFO] Got rejoin req\n")
-// 	if UCM.alive_list[_server.host_num].Status == Leave {
-// 		*response = 1
-// 		result := udp_connection_packet{}
-// 		result.Flag[J_type] = Rejoin_request
-// 		UCM.alive_list[_server.host_num].Id = time.Now().UnixMilli()
-// 		UCM.result_channel <- result
-// 	} else {
-// 		*response = 0
-// 	}
-
-//		return nil
-//	}
+	return nil
+}
 func EncodeToBytes(pkt *udp_connection_packet) []byte {
-	var buf []byte = make([]byte, 4+5*len(pkt.Data))
+	// logger.Printf("EncodeToBytes\n")
+	var buf []byte = make([]byte, 4+17*len(pkt.Data))
 	buf[0] = byte(pkt.Flag[J_type])
 	buf[1] = byte(pkt.Flag[Src_num])
 	buf[2] = byte(pkt.Flag[Dst_num])
@@ -460,20 +505,25 @@ func EncodeToBytes(pkt *udp_connection_packet) []byte {
 	for _, ms := range pkt.Data {
 		buf[offset] = byte(ms.Status)
 		offset += 1
-		binary.BigEndian.PutUint32(buf[offset:], uint32(ms.Incarnation))
-		offset += 4
+		binary.BigEndian.PutUint64(buf[offset:], uint64(ms.Timestamp))
+		offset += 8
+		binary.BigEndian.PutUint64(buf[offset:], uint64(ms.Id))
+		offset += 8
 	}
+	// logger.Printf("EncodeToBytes %v\n", buf)
 	return buf
 }
 func DecodeToResult(buf []byte) udp_connection_packet {
+	// logger.Printf("DecodeToResult\n")
 	size := len(buf)
+	// logger.Printf("DecodeToResult %v size: %v\n", buf, size)
 	result := udp_connection_packet{}
 	result.Flag[J_type] = int8(buf[0])
 	result.Flag[Src_num] = int8(buf[1])
 	result.Flag[Dst_num] = int8(buf[2])
 	result.Flag[P_target] = int8(buf[3])
-	for offset := 4; offset < size; offset += 5 {
-		ms := machine_status{Status: int8(buf[offset]), Incarnation: int32(binary.BigEndian.Uint32(buf[offset+1:]))}
+	for offset := 4; offset < size; offset += 17 {
+		ms := machine_status{Status: int8(buf[offset]), Timestamp: int64(binary.BigEndian.Uint64(buf[offset+1:])), Id: int64(binary.BigEndian.Uint64(buf[offset+9:]))}
 		result.Data = append(result.Data, ms)
 	}
 	return result

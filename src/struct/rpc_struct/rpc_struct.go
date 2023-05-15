@@ -1,10 +1,19 @@
 package rpc_struct
 
 type LogQueryRequest struct {
-	Param string
+	Param []string
 }
 type LogQueryResponse struct {
 	Result string
-	Time   string
 	Line   int
+	Time   string
+	Host   string
+}
+
+type MultiLogQueryRequest struct {
+	Param []string
+}
+type MultiLogQueryResponse struct {
+	Result []LogQueryResponse
+	Time   string
 }

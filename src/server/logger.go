@@ -17,3 +17,10 @@ func ExitError(err error) {
 		os.Exit(1)
 	}
 }
+func CheckWarn(err error) bool {
+	if err != nil {
+		logger.Printf("[Warn]: %s \n", err.Error())
+		return false
+	}
+	return true
+}

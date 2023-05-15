@@ -9,6 +9,13 @@ import (
 	configstruct "workspace/src/struct/config_struct"
 )
 
+func CheckWarn(err error) bool {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[Warn]: %s \n", err.Error())
+		return false
+	}
+	return true
+}
 func CheckError(err error) bool {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[ERROR]: %s \n", err.Error())
@@ -50,10 +57,10 @@ func Load_config() []configstruct.Node {
 		ips, err := net.LookupIP(server_info[0])
 		if err != nil {
 			// fmt.Fprintf(os.Stderr, "Could not get IPs: %v. Use Pre-write-in IP\n", err)
-			log_servers = append(log_servers, configstruct.Node{Ip: server_info[1], Rpc_Port: server_info[2], Host: server_info[0]})
+			log_servers = append(log_servers, configstruct.Node{Ip: server_info[1], Host: server_info[0]})
 		} else {
 			// fmt.Fprintf(os.Stdout, "Get IPs: %v\n", ips[0].String())
-			log_servers = append(log_servers, configstruct.Node{Ip: ips[0].String(), Rpc_Port: server_info[2], Host: server_info[0]})
+			log_servers = append(log_servers, configstruct.Node{Ip: ips[0].String(), Host: server_info[0]})
 		}
 	}
 	// fmt.Printf("%v\n", log_servers)
