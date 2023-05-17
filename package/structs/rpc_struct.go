@@ -1,4 +1,4 @@
-package rpc_struct
+package mystruct
 
 type LogQueryRequest struct {
 	Param []string

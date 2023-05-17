@@ -2,3 +2,4 @@ test/*
 log/*
 .DS_Store
 ./*.
+count.txt

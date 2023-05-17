@@ -5,8 +5,8 @@ import (
 	"net/rpc"
 	"os"
 	"sync"
-	helper "workspace/src/helper"
-	rpc_struct "workspace/src/struct/rpc_struct"
+	lg "workspace/package/logger"
+	rpc_struct "workspace/package/structs"
 )
 
 var wg sync.WaitGroup
@@ -22,9 +22,10 @@ func main() {
 			param = append(param, arg)
 		}
 	}
+	lg.Logger_init("./log/log_client.log")
 	service := "0.0.0.0:9487"
 	client, err := rpc.Dial("tcp", service)
-	if !helper.CheckError(err) {
+	if !lg.CheckError(err) {
 		fmt.Printf("Fail to connect to log server\n")
 		return
 	}
@@ -32,7 +33,7 @@ func main() {
 	args := rpc_struct.MultiLogQueryRequest{Param: param}
 	var response rpc_struct.MultiLogQueryResponse
 	err = client.Call("Distribited_Servers.Search_logs", args, &response)
-	helper.CheckError(err)
+	lg.CheckError(err)
 	fmt.Printf("Success to get response\n")
 	sum := 0
 	for _, logqueryresponse := range response.Result {
