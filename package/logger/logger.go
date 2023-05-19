@@ -9,9 +9,6 @@ import (
 )
 
 var Nodelogger *logrus.Logger
-var Clientlogger *logrus.Logger
-
-// var logg = logrus.New()
 
 func Logger_init(path string) {
 	Nodelogger = logrus.New()
@@ -36,7 +33,7 @@ func CheckError(err error) bool {
 	return true
 }
 
-func ExitError(err error) {
+func CheckFatal(err error) {
 	if err != nil {
 		// fmt.Fprintf(os.Stderr, "%s error: %s", function, err.Error())
 		Nodelogger.Fatalf("%s", err.Error())

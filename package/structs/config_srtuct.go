@@ -5,7 +5,6 @@ type Node struct {
 }
 type Server_info struct {
 	Log       string
-	Log_path  string
 	Host_name string
 	Host_num  int
 	Master    Master_node

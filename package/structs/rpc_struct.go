@@ -17,3 +17,10 @@ type MultiLogQueryResponse struct {
 	Result []LogQueryResponse
 	Time   string
 }
+
+type GrepResult struct {
+	Result string
+	Line   int
+	Time   string
+	Host   string
+}

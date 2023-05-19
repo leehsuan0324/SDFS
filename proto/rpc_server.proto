@@ -1,0 +1,36 @@
+syntax = "proto3";
+option go_package = "proto/"; 
+package proto;
+
+service LogQuery{
+    rpc Grep(LogRequest) returns (GrepResponse){}
+    rpc SearchLogs(LogRequest) returns (stream LogResponse){}
+}
+
+message GrepResponse{
+    int32  Line = 1;
+    string Result = 2;
+}
+
+message LogRequest{
+    repeated string Params = 1;
+}
+
+message LogResponse{
+    string Time = 1;
+    int32  Line = 2;
+    string Result = 3;
+    string Host = 4;
+}
+
+service File{
+    rpc NodeLeave(LeaveRequest) returns (LeaveResponse){}
+}
+
+message LeaveRequest{
+    int32 host = 1;
+}
+
+message LeaveResponse{
+    int32 status = 1;
+}

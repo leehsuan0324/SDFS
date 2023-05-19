@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 	"workspace/package/configs"
-	fm "workspace/package/friendship_manager"
+	fsys "workspace/package/filesys"
+	fm "workspace/package/friendmgr"
 	lg "workspace/package/logger"
-	rpcserver "workspace/package/rpc_server"
 	mystruct "workspace/package/structs"
 )
 
@@ -19,17 +19,14 @@ func main() {
 
 	configs.Myself.Host_num, _ = strconv.Atoi(os.Args[1])
 	configs.Myself.Host_name = fmt.Sprintf("machine.%02d", configs.Myself.Host_num)
-	configs.Myself.Log_path = "/tmp/machine.log"
 	configs.Myself.Log = "./log/" + configs.Myself.Host_name + ".log"
 	configs.Myself.Master = mystruct.Master_node{Number: 0, Status: 0}
 
 	server_init()
 
-	rpcserver.Rpc_server_wg.Add(1)
-	go rpcserver.Rpc_server()
-	rpcserver.Rpc_server_wg.Wait()
-
 	go fm.Membership_manager()
+
+	go fsys.File_server_init()
 
 	cnt := 0
 	for {

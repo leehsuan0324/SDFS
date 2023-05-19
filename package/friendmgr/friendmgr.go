@@ -149,7 +149,7 @@ func update_manager() {
 					UCM.Alive_list[i].Status = Failure
 					UCM.Alive_list[i].Timestamp = time.Now().UnixMilli()
 					// election_channel <- false
-				} else if (UCM.Alive_list[i].Status == Failure || UCM.Alive_list[i].Status == Left) && UCM.Alive_list[i].Timestamp+3000 < time.Now().UnixMilli() {
+				} else if (UCM.Alive_list[i].Status == Failure || UCM.Alive_list[i].Status == Left) && UCM.Alive_list[i].Timestamp+5000 < time.Now().UnixMilli() {
 					logger.Nodelogger.Infof("[update_manager] Timeout. Update %v from %v to %v", configs.Servers[i].Host, Status_string[UCM.Alive_list[i].Status], Status_string[Deleted])
 					UCM.Alive_list[i].Status = Deleted
 					UCM.Alive_list[i].Timestamp = time.Now().UnixMilli()
@@ -157,7 +157,7 @@ func update_manager() {
 				}
 			}
 		case Leave_request:
-			logger.Nodelogger.Infof("[update_manager] Update %v from %v to %v", configs.Servers[dst].Host, Status_string[configs.Myself.Host_num], Status_string[Left])
+			logger.Nodelogger.Infof("[update_manager] Update %v from %v to %v", configs.Servers[configs.Myself.Host_num].Host, Status_string[UCM.Alive_list[configs.Myself.Host_num].Status], Status_string[Left])
 			UCM.Alive_list[configs.Myself.Host_num].Status = Left
 			UCM.Alive_list[configs.Myself.Host_num].Timestamp = time.Now().UnixMilli()
 
@@ -362,27 +362,27 @@ func membership_manager_init() {
 	Status_string = []string{"Unknown", "Joining", "Running", "Suspicious", "Failure", "Leaving", "Left", "Deleted"}
 
 	udpAddr, err := net.ResolveUDPAddr("udp", ":"+configs.MP2_RECEIVER_PORT)
-	logger.ExitError(err)
+	logger.CheckFatal(err)
 	UCM.Receive_server, err = net.ListenUDP("udp", udpAddr)
-	logger.ExitError(err)
+	logger.CheckFatal(err)
 	logger.Nodelogger.Infof("[udp_connection_management_init] ListenUDP Success %v", udpAddr)
 
 	udpAddr, err = net.ResolveUDPAddr("udp", ":"+configs.MP2_SENDER_1_PORT)
-	logger.ExitError(err)
+	logger.CheckFatal(err)
 	UCM.Send_server1, err = net.ListenUDP("udp", udpAddr)
-	logger.ExitError(err)
+	logger.CheckFatal(err)
 	logger.Nodelogger.Infof("[udp_connection_management_init] ListenUDP Success %v", udpAddr)
 
 	udpAddr, err = net.ResolveUDPAddr("udp", ":"+configs.MP2_SENDER_2_PORT)
-	logger.ExitError(err)
+	logger.CheckFatal(err)
 	UCM.Send_server2, err = net.ListenUDP("udp", udpAddr)
-	logger.ExitError(err)
+	logger.CheckFatal(err)
 	logger.Nodelogger.Infof("[udp_connection_management_init] ListenUDP Success %v", udpAddr)
 
 	udpAddr, err = net.ResolveUDPAddr("udp", ":"+configs.MP2_SENDER_3_PORT)
-	logger.ExitError(err)
+	logger.CheckFatal(err)
 	UCM.Send_server3, err = net.ListenUDP("udp", udpAddr)
-	logger.ExitError(err)
+	logger.CheckFatal(err)
 	logger.Nodelogger.Infof("[udp_connection_management_init] ListenUDP Success %v", udpAddr)
 
 	for i := 1; i < len(configs.Servers); i++ {

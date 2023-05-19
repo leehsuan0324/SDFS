@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"net/rpc"
+	"io"
 	"os"
 	"sync"
-	lg "workspace/package/logger"
+	"time"
+	"workspace/package/configs"
 	rpc_struct "workspace/package/structs"
+	pb "workspace/proto"
+
+	"google.golang.org/grpc"
 )
 
 var wg sync.WaitGroup
@@ -22,25 +27,41 @@ func main() {
 			param = append(param, arg)
 		}
 	}
-	lg.Logger_init("./log/log_client.log")
-	service := "0.0.0.0:9487"
-	client, err := rpc.Dial("tcp", service)
-	if !lg.CheckError(err) {
+
+	service := "0.0.0.0:" + configs.LOG_SERVER_PORT
+	start := time.Now()
+	conn, err := grpc.Dial(service, grpc.WithInsecure())
+	if err != nil {
 		fmt.Printf("Fail to connect to log server\n")
 		return
 	}
 	fmt.Printf("Success to connect to log server\n")
-	args := rpc_struct.MultiLogQueryRequest{Param: param}
-	var response rpc_struct.MultiLogQueryResponse
-	err = client.Call("Distribited_Servers.Search_logs", args, &response)
-	lg.CheckError(err)
-	fmt.Printf("Success to get response\n")
-	sum := 0
-	for _, logqueryresponse := range response.Result {
-		fmt.Printf("\n== %s ==\n%s\nLine: %v  Time: %s\n", logqueryresponse.Host, logqueryresponse.Result, logqueryresponse.Line, logqueryresponse.Time)
-		sum += logqueryresponse.Line
+	defer conn.Close()
+	client := pb.NewLogQueryClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stream, err := client.SearchLogs(ctx, &pb.LogRequest{Params: param})
+	if err != nil {
+		fmt.Printf("client.SearchLogs failed: %v", err)
 	}
+
+	sum := 0
+	for {
+		logqueryresponse, err := stream.Recv()
+
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			fmt.Printf("client.ListFeatures failed: %v", err)
+		}
+		fmt.Printf("\n== %s ==\n%s\nLine: %v  Time: %s\n", logqueryresponse.Host, logqueryresponse.Result, logqueryresponse.Line, logqueryresponse.Time)
+		sum += int(logqueryresponse.Line)
+
+	}
+	elapsed := time.Since(start)
 	fmt.Printf("\n----------  [Statistic]  ----------\n")
-	fmt.Printf("Total Line: %d Total Time: %s\n", sum, response.Time)
+	fmt.Printf("Total Line: %d Total Time: %s\n", sum, elapsed.String())
 	os.Exit(0)
 }

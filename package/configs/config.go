@@ -19,7 +19,9 @@ var Servers []mystruct.Node = []mystruct.Node{
 	{Ip: "172.28.0.10", Host: "machine.10"},
 }
 
-var RPC_SERVER_PORT = "9487"
+var LOG_SERVER_PORT = "9487"
+var FILE_SERVER_PORT = "9478"
+var MP1_LOG_PATH = "/tmp/machine.log"
 var MP2_RECEIVER_PORT = "19487"
 var MP2_SENDER_1_PORT = "19486"
 var MP2_SENDER_2_PORT = "19485"
