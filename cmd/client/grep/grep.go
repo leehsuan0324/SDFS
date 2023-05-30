@@ -8,14 +8,12 @@ import (
 	"sync"
 	"time"
 	"workspace/package/configs"
-	rpc_struct "workspace/package/structs"
 	pb "workspace/proto"
 
 	"google.golang.org/grpc"
 )
 
 var wg sync.WaitGroup
-var hosts_statistic map[string]*rpc_struct.LogQueryResponse
 var m *sync.Mutex
 
 func main() {

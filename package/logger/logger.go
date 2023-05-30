@@ -10,7 +10,7 @@ import (
 
 var Nodelogger *logrus.Logger
 
-func Logger_init(path string) {
+func LoggerInit(path string) {
 	Nodelogger = logrus.New()
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {

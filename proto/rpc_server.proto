@@ -2,20 +2,27 @@ syntax = "proto3";
 option go_package = "proto/"; 
 package proto;
 
-service LogQuery{
-    rpc Grep(LogRequest) returns (GrepResponse){}
-    rpc SearchLogs(LogRequest) returns (stream LogResponse){}
+message Empty{
 }
 
+service LogQuery{
+    rpc Grep(GrepRequest) returns (GrepResponse){}
+    rpc SearchLogs(LogRequest) returns (stream LogResponse){}
+    rpc RestartFileserver(Empty) returns (RestartResponse){}
+}
+message RestartResponse{
+    int32  status = 1;
+}
 message GrepResponse{
     int32  Line = 1;
     string Result = 2;
 }
-
+message GrepRequest{
+    repeated string Params = 1;
+}
 message LogRequest{
     repeated string Params = 1;
 }
-
 message LogResponse{
     string Time = 1;
     int32  Line = 2;
@@ -24,13 +31,73 @@ message LogResponse{
 }
 
 service File{
-    rpc NodeLeave(LeaveRequest) returns (LeaveResponse){}
+    // control
+    rpc NodeLeave(Empty) returns (LeaveResponse){}
+    rpc ClusterStatus(Empty) returns (MachinesStatus){}
+    rpc GetLeader(Empty) returns (LeaderInfo){}
+    
+    // trigger election
+    rpc TriggerElection(StatusMsg) returns (Empty){} 
+    
+    // election
+    // rpc SetAndSync(LeaderInfo) returns (stream NodeFileMetadata){}
+    rpc SyncMetadata(stream LocalfileMetaData) returns (LeaderInfo){}
+    rpc SyncComplete(LeaderInfo) returns (Empty){}
+    
+    // File server
+    rpc GetGlobalFiles(Empty) returns(stream SDFSFileInfo){}
+    rpc GetLocalFiles(Empty) returns(stream MetaData){}
+    rpc GetLocalfile(MetaData) returns(MetaData){}
+    
+    rpc RegisterFile(MetaData) returns(SDFSFileInfo){}
+    rpc GetFileInfo(MetaData) returns(SDFSFileInfo){}
+    rpc GetFile(MetaData) returns(stream FileData){}
+    
+    rpc WriteFile(stream FileData) returns(stream StatusMsg){}
+    rpc UpdateGlobalFiles(LocalfileMetaData) returns(Empty){}
+    rpc AssignRepication(SDFSFileInfo) returns(Empty){}
+    // rpc UpdateGlobalFiles(LocalfileMetaData) returns(Empty){}
+    // rpc GetReplicationLocation(FileMetaData) returns(FileMetaData){}
 }
-
-message LeaveRequest{
-    int32 host = 1;
-}
-
 message LeaveResponse{
-    int32 status = 1;
+    int32 Status = 1;
+}
+message LeaderInfo{
+    int32 Number = 1;
+    int32 Status = 2;
+}
+message MachineStatus{
+    int32 Host = 1;
+    int32 Incarnation = 2;
+    string Status = 3;
+}
+message MachinesStatus{
+    repeated MachineStatus MsStatus = 1;
+    int32 Leader = 2;
+    int32 LeaderStatus = 3;
+}
+
+message StatusMsg{
+    int32 Status = 1;
+}
+message MetaData{
+    int32 Incarnation = 1;
+    int32 Status = 2;
+    string Filename = 3;
+    
+}
+message SDFSFileInfo{
+    MetaData FMeta = 1;
+    repeated int32 Acked = 3;
+    repeated int32 Writing = 2;
+    // repeated int32 Assigned = 4;
+}
+message FileData{
+    bytes Data = 1;
+    MetaData Meta = 2;
+    int32 Status = 3;
+}
+message LocalfileMetaData{
+    MetaData FMeta = 1;
+    int32 Host = 2;
 }

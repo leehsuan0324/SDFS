@@ -22,8 +22,9 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type LogQueryClient interface {
-	Grep(ctx context.Context, in *LogRequest, opts ...grpc.CallOption) (*GrepResponse, error)
+	Grep(ctx context.Context, in *GrepRequest, opts ...grpc.CallOption) (*GrepResponse, error)
 	SearchLogs(ctx context.Context, in *LogRequest, opts ...grpc.CallOption) (LogQuery_SearchLogsClient, error)
+	RestartFileserver(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*RestartResponse, error)
 }
 
 type logQueryClient struct {
@@ -34,7 +35,7 @@ func NewLogQueryClient(cc grpc.ClientConnInterface) LogQueryClient {
 	return &logQueryClient{cc}
 }
 
-func (c *logQueryClient) Grep(ctx context.Context, in *LogRequest, opts ...grpc.CallOption) (*GrepResponse, error) {
+func (c *logQueryClient) Grep(ctx context.Context, in *GrepRequest, opts ...grpc.CallOption) (*GrepResponse, error) {
 	out := new(GrepResponse)
 	err := c.cc.Invoke(ctx, "/proto.LogQuery/Grep", in, out, opts...)
 	if err != nil {
@@ -75,12 +76,22 @@ func (x *logQuerySearchLogsClient) Recv() (*LogResponse, error) {
 	return m, nil
 }
 
+func (c *logQueryClient) RestartFileserver(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*RestartResponse, error) {
+	out := new(RestartResponse)
+	err := c.cc.Invoke(ctx, "/proto.LogQuery/RestartFileserver", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LogQueryServer is the server API for LogQuery service.
 // All implementations must embed UnimplementedLogQueryServer
 // for forward compatibility
 type LogQueryServer interface {
-	Grep(context.Context, *LogRequest) (*GrepResponse, error)
+	Grep(context.Context, *GrepRequest) (*GrepResponse, error)
 	SearchLogs(*LogRequest, LogQuery_SearchLogsServer) error
+	RestartFileserver(context.Context, *Empty) (*RestartResponse, error)
 	mustEmbedUnimplementedLogQueryServer()
 }
 
@@ -88,11 +99,14 @@ type LogQueryServer interface {
 type UnimplementedLogQueryServer struct {
 }
 
-func (UnimplementedLogQueryServer) Grep(context.Context, *LogRequest) (*GrepResponse, error) {
+func (UnimplementedLogQueryServer) Grep(context.Context, *GrepRequest) (*GrepResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Grep not implemented")
 }
 func (UnimplementedLogQueryServer) SearchLogs(*LogRequest, LogQuery_SearchLogsServer) error {
 	return status.Errorf(codes.Unimplemented, "method SearchLogs not implemented")
+}
+func (UnimplementedLogQueryServer) RestartFileserver(context.Context, *Empty) (*RestartResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RestartFileserver not implemented")
 }
 func (UnimplementedLogQueryServer) mustEmbedUnimplementedLogQueryServer() {}
 
@@ -108,7 +122,7 @@ func RegisterLogQueryServer(s grpc.ServiceRegistrar, srv LogQueryServer) {
 }
 
 func _LogQuery_Grep_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(LogRequest)
+	in := new(GrepRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -120,7 +134,7 @@ func _LogQuery_Grep_Handler(srv interface{}, ctx context.Context, dec func(inter
 		FullMethod: "/proto.LogQuery/Grep",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(LogQueryServer).Grep(ctx, req.(*LogRequest))
+		return srv.(LogQueryServer).Grep(ctx, req.(*GrepRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -146,6 +160,24 @@ func (x *logQuerySearchLogsServer) Send(m *LogResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _LogQuery_RestartFileserver_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LogQueryServer).RestartFileserver(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.LogQuery/RestartFileserver",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LogQueryServer).RestartFileserver(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // LogQuery_ServiceDesc is the grpc.ServiceDesc for LogQuery service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -156,6 +188,10 @@ var LogQuery_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Grep",
 			Handler:    _LogQuery_Grep_Handler,
+		},
+		{
+			MethodName: "RestartFileserver",
+			Handler:    _LogQuery_RestartFileserver_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
@@ -172,7 +208,26 @@ var LogQuery_ServiceDesc = grpc.ServiceDesc{
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type FileClient interface {
-	NodeLeave(ctx context.Context, in *LeaveRequest, opts ...grpc.CallOption) (*LeaveResponse, error)
+	// control
+	NodeLeave(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*LeaveResponse, error)
+	ClusterStatus(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*MachinesStatus, error)
+	GetLeader(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*LeaderInfo, error)
+	// trigger election
+	TriggerElection(ctx context.Context, in *StatusMsg, opts ...grpc.CallOption) (*Empty, error)
+	// election
+	// rpc SetAndSync(LeaderInfo) returns (stream NodeFileMetadata){}
+	SyncMetadata(ctx context.Context, opts ...grpc.CallOption) (File_SyncMetadataClient, error)
+	SyncComplete(ctx context.Context, in *LeaderInfo, opts ...grpc.CallOption) (*Empty, error)
+	// File server
+	GetGlobalFiles(ctx context.Context, in *Empty, opts ...grpc.CallOption) (File_GetGlobalFilesClient, error)
+	GetLocalFiles(ctx context.Context, in *Empty, opts ...grpc.CallOption) (File_GetLocalFilesClient, error)
+	GetLocalfile(ctx context.Context, in *MetaData, opts ...grpc.CallOption) (*MetaData, error)
+	RegisterFile(ctx context.Context, in *MetaData, opts ...grpc.CallOption) (*SDFSFileInfo, error)
+	GetFileInfo(ctx context.Context, in *MetaData, opts ...grpc.CallOption) (*SDFSFileInfo, error)
+	GetFile(ctx context.Context, in *MetaData, opts ...grpc.CallOption) (File_GetFileClient, error)
+	WriteFile(ctx context.Context, opts ...grpc.CallOption) (File_WriteFileClient, error)
+	UpdateGlobalFiles(ctx context.Context, in *LocalfileMetaData, opts ...grpc.CallOption) (*Empty, error)
+	AssignRepication(ctx context.Context, in *SDFSFileInfo, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type fileClient struct {
@@ -183,9 +238,251 @@ func NewFileClient(cc grpc.ClientConnInterface) FileClient {
 	return &fileClient{cc}
 }
 
-func (c *fileClient) NodeLeave(ctx context.Context, in *LeaveRequest, opts ...grpc.CallOption) (*LeaveResponse, error) {
+func (c *fileClient) NodeLeave(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*LeaveResponse, error) {
 	out := new(LeaveResponse)
 	err := c.cc.Invoke(ctx, "/proto.File/NodeLeave", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileClient) ClusterStatus(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*MachinesStatus, error) {
+	out := new(MachinesStatus)
+	err := c.cc.Invoke(ctx, "/proto.File/ClusterStatus", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileClient) GetLeader(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*LeaderInfo, error) {
+	out := new(LeaderInfo)
+	err := c.cc.Invoke(ctx, "/proto.File/GetLeader", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileClient) TriggerElection(ctx context.Context, in *StatusMsg, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/proto.File/TriggerElection", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileClient) SyncMetadata(ctx context.Context, opts ...grpc.CallOption) (File_SyncMetadataClient, error) {
+	stream, err := c.cc.NewStream(ctx, &File_ServiceDesc.Streams[0], "/proto.File/SyncMetadata", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &fileSyncMetadataClient{stream}
+	return x, nil
+}
+
+type File_SyncMetadataClient interface {
+	Send(*LocalfileMetaData) error
+	CloseAndRecv() (*LeaderInfo, error)
+	grpc.ClientStream
+}
+
+type fileSyncMetadataClient struct {
+	grpc.ClientStream
+}
+
+func (x *fileSyncMetadataClient) Send(m *LocalfileMetaData) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *fileSyncMetadataClient) CloseAndRecv() (*LeaderInfo, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(LeaderInfo)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *fileClient) SyncComplete(ctx context.Context, in *LeaderInfo, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/proto.File/SyncComplete", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileClient) GetGlobalFiles(ctx context.Context, in *Empty, opts ...grpc.CallOption) (File_GetGlobalFilesClient, error) {
+	stream, err := c.cc.NewStream(ctx, &File_ServiceDesc.Streams[1], "/proto.File/GetGlobalFiles", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &fileGetGlobalFilesClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type File_GetGlobalFilesClient interface {
+	Recv() (*SDFSFileInfo, error)
+	grpc.ClientStream
+}
+
+type fileGetGlobalFilesClient struct {
+	grpc.ClientStream
+}
+
+func (x *fileGetGlobalFilesClient) Recv() (*SDFSFileInfo, error) {
+	m := new(SDFSFileInfo)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *fileClient) GetLocalFiles(ctx context.Context, in *Empty, opts ...grpc.CallOption) (File_GetLocalFilesClient, error) {
+	stream, err := c.cc.NewStream(ctx, &File_ServiceDesc.Streams[2], "/proto.File/GetLocalFiles", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &fileGetLocalFilesClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type File_GetLocalFilesClient interface {
+	Recv() (*MetaData, error)
+	grpc.ClientStream
+}
+
+type fileGetLocalFilesClient struct {
+	grpc.ClientStream
+}
+
+func (x *fileGetLocalFilesClient) Recv() (*MetaData, error) {
+	m := new(MetaData)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *fileClient) GetLocalfile(ctx context.Context, in *MetaData, opts ...grpc.CallOption) (*MetaData, error) {
+	out := new(MetaData)
+	err := c.cc.Invoke(ctx, "/proto.File/GetLocalfile", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileClient) RegisterFile(ctx context.Context, in *MetaData, opts ...grpc.CallOption) (*SDFSFileInfo, error) {
+	out := new(SDFSFileInfo)
+	err := c.cc.Invoke(ctx, "/proto.File/RegisterFile", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileClient) GetFileInfo(ctx context.Context, in *MetaData, opts ...grpc.CallOption) (*SDFSFileInfo, error) {
+	out := new(SDFSFileInfo)
+	err := c.cc.Invoke(ctx, "/proto.File/GetFileInfo", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileClient) GetFile(ctx context.Context, in *MetaData, opts ...grpc.CallOption) (File_GetFileClient, error) {
+	stream, err := c.cc.NewStream(ctx, &File_ServiceDesc.Streams[3], "/proto.File/GetFile", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &fileGetFileClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type File_GetFileClient interface {
+	Recv() (*FileData, error)
+	grpc.ClientStream
+}
+
+type fileGetFileClient struct {
+	grpc.ClientStream
+}
+
+func (x *fileGetFileClient) Recv() (*FileData, error) {
+	m := new(FileData)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *fileClient) WriteFile(ctx context.Context, opts ...grpc.CallOption) (File_WriteFileClient, error) {
+	stream, err := c.cc.NewStream(ctx, &File_ServiceDesc.Streams[4], "/proto.File/WriteFile", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &fileWriteFileClient{stream}
+	return x, nil
+}
+
+type File_WriteFileClient interface {
+	Send(*FileData) error
+	Recv() (*StatusMsg, error)
+	grpc.ClientStream
+}
+
+type fileWriteFileClient struct {
+	grpc.ClientStream
+}
+
+func (x *fileWriteFileClient) Send(m *FileData) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *fileWriteFileClient) Recv() (*StatusMsg, error) {
+	m := new(StatusMsg)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *fileClient) UpdateGlobalFiles(ctx context.Context, in *LocalfileMetaData, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/proto.File/UpdateGlobalFiles", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fileClient) AssignRepication(ctx context.Context, in *SDFSFileInfo, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/proto.File/AssignRepication", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +493,26 @@ func (c *fileClient) NodeLeave(ctx context.Context, in *LeaveRequest, opts ...gr
 // All implementations must embed UnimplementedFileServer
 // for forward compatibility
 type FileServer interface {
-	NodeLeave(context.Context, *LeaveRequest) (*LeaveResponse, error)
+	// control
+	NodeLeave(context.Context, *Empty) (*LeaveResponse, error)
+	ClusterStatus(context.Context, *Empty) (*MachinesStatus, error)
+	GetLeader(context.Context, *Empty) (*LeaderInfo, error)
+	// trigger election
+	TriggerElection(context.Context, *StatusMsg) (*Empty, error)
+	// election
+	// rpc SetAndSync(LeaderInfo) returns (stream NodeFileMetadata){}
+	SyncMetadata(File_SyncMetadataServer) error
+	SyncComplete(context.Context, *LeaderInfo) (*Empty, error)
+	// File server
+	GetGlobalFiles(*Empty, File_GetGlobalFilesServer) error
+	GetLocalFiles(*Empty, File_GetLocalFilesServer) error
+	GetLocalfile(context.Context, *MetaData) (*MetaData, error)
+	RegisterFile(context.Context, *MetaData) (*SDFSFileInfo, error)
+	GetFileInfo(context.Context, *MetaData) (*SDFSFileInfo, error)
+	GetFile(*MetaData, File_GetFileServer) error
+	WriteFile(File_WriteFileServer) error
+	UpdateGlobalFiles(context.Context, *LocalfileMetaData) (*Empty, error)
+	AssignRepication(context.Context, *SDFSFileInfo) (*Empty, error)
 	mustEmbedUnimplementedFileServer()
 }
 
@@ -204,8 +520,50 @@ type FileServer interface {
 type UnimplementedFileServer struct {
 }
 
-func (UnimplementedFileServer) NodeLeave(context.Context, *LeaveRequest) (*LeaveResponse, error) {
+func (UnimplementedFileServer) NodeLeave(context.Context, *Empty) (*LeaveResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodeLeave not implemented")
+}
+func (UnimplementedFileServer) ClusterStatus(context.Context, *Empty) (*MachinesStatus, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClusterStatus not implemented")
+}
+func (UnimplementedFileServer) GetLeader(context.Context, *Empty) (*LeaderInfo, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetLeader not implemented")
+}
+func (UnimplementedFileServer) TriggerElection(context.Context, *StatusMsg) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TriggerElection not implemented")
+}
+func (UnimplementedFileServer) SyncMetadata(File_SyncMetadataServer) error {
+	return status.Errorf(codes.Unimplemented, "method SyncMetadata not implemented")
+}
+func (UnimplementedFileServer) SyncComplete(context.Context, *LeaderInfo) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SyncComplete not implemented")
+}
+func (UnimplementedFileServer) GetGlobalFiles(*Empty, File_GetGlobalFilesServer) error {
+	return status.Errorf(codes.Unimplemented, "method GetGlobalFiles not implemented")
+}
+func (UnimplementedFileServer) GetLocalFiles(*Empty, File_GetLocalFilesServer) error {
+	return status.Errorf(codes.Unimplemented, "method GetLocalFiles not implemented")
+}
+func (UnimplementedFileServer) GetLocalfile(context.Context, *MetaData) (*MetaData, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetLocalfile not implemented")
+}
+func (UnimplementedFileServer) RegisterFile(context.Context, *MetaData) (*SDFSFileInfo, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RegisterFile not implemented")
+}
+func (UnimplementedFileServer) GetFileInfo(context.Context, *MetaData) (*SDFSFileInfo, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetFileInfo not implemented")
+}
+func (UnimplementedFileServer) GetFile(*MetaData, File_GetFileServer) error {
+	return status.Errorf(codes.Unimplemented, "method GetFile not implemented")
+}
+func (UnimplementedFileServer) WriteFile(File_WriteFileServer) error {
+	return status.Errorf(codes.Unimplemented, "method WriteFile not implemented")
+}
+func (UnimplementedFileServer) UpdateGlobalFiles(context.Context, *LocalfileMetaData) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateGlobalFiles not implemented")
+}
+func (UnimplementedFileServer) AssignRepication(context.Context, *SDFSFileInfo) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AssignRepication not implemented")
 }
 func (UnimplementedFileServer) mustEmbedUnimplementedFileServer() {}
 
@@ -221,7 +579,7 @@ func RegisterFileServer(s grpc.ServiceRegistrar, srv FileServer) {
 }
 
 func _File_NodeLeave_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(LeaveRequest)
+	in := new(Empty)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -233,7 +591,284 @@ func _File_NodeLeave_Handler(srv interface{}, ctx context.Context, dec func(inte
 		FullMethod: "/proto.File/NodeLeave",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(FileServer).NodeLeave(ctx, req.(*LeaveRequest))
+		return srv.(FileServer).NodeLeave(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _File_ClusterStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServer).ClusterStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.File/ClusterStatus",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServer).ClusterStatus(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _File_GetLeader_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServer).GetLeader(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.File/GetLeader",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServer).GetLeader(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _File_TriggerElection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StatusMsg)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServer).TriggerElection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.File/TriggerElection",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServer).TriggerElection(ctx, req.(*StatusMsg))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _File_SyncMetadata_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(FileServer).SyncMetadata(&fileSyncMetadataServer{stream})
+}
+
+type File_SyncMetadataServer interface {
+	SendAndClose(*LeaderInfo) error
+	Recv() (*LocalfileMetaData, error)
+	grpc.ServerStream
+}
+
+type fileSyncMetadataServer struct {
+	grpc.ServerStream
+}
+
+func (x *fileSyncMetadataServer) SendAndClose(m *LeaderInfo) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *fileSyncMetadataServer) Recv() (*LocalfileMetaData, error) {
+	m := new(LocalfileMetaData)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func _File_SyncComplete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LeaderInfo)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServer).SyncComplete(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.File/SyncComplete",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServer).SyncComplete(ctx, req.(*LeaderInfo))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _File_GetGlobalFiles_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(Empty)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(FileServer).GetGlobalFiles(m, &fileGetGlobalFilesServer{stream})
+}
+
+type File_GetGlobalFilesServer interface {
+	Send(*SDFSFileInfo) error
+	grpc.ServerStream
+}
+
+type fileGetGlobalFilesServer struct {
+	grpc.ServerStream
+}
+
+func (x *fileGetGlobalFilesServer) Send(m *SDFSFileInfo) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _File_GetLocalFiles_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(Empty)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(FileServer).GetLocalFiles(m, &fileGetLocalFilesServer{stream})
+}
+
+type File_GetLocalFilesServer interface {
+	Send(*MetaData) error
+	grpc.ServerStream
+}
+
+type fileGetLocalFilesServer struct {
+	grpc.ServerStream
+}
+
+func (x *fileGetLocalFilesServer) Send(m *MetaData) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _File_GetLocalfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MetaData)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServer).GetLocalfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.File/GetLocalfile",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServer).GetLocalfile(ctx, req.(*MetaData))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _File_RegisterFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MetaData)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServer).RegisterFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.File/RegisterFile",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServer).RegisterFile(ctx, req.(*MetaData))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _File_GetFileInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MetaData)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServer).GetFileInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.File/GetFileInfo",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServer).GetFileInfo(ctx, req.(*MetaData))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _File_GetFile_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(MetaData)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(FileServer).GetFile(m, &fileGetFileServer{stream})
+}
+
+type File_GetFileServer interface {
+	Send(*FileData) error
+	grpc.ServerStream
+}
+
+type fileGetFileServer struct {
+	grpc.ServerStream
+}
+
+func (x *fileGetFileServer) Send(m *FileData) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _File_WriteFile_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(FileServer).WriteFile(&fileWriteFileServer{stream})
+}
+
+type File_WriteFileServer interface {
+	Send(*StatusMsg) error
+	Recv() (*FileData, error)
+	grpc.ServerStream
+}
+
+type fileWriteFileServer struct {
+	grpc.ServerStream
+}
+
+func (x *fileWriteFileServer) Send(m *StatusMsg) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *fileWriteFileServer) Recv() (*FileData, error) {
+	m := new(FileData)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func _File_UpdateGlobalFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LocalfileMetaData)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServer).UpdateGlobalFiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.File/UpdateGlobalFiles",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServer).UpdateGlobalFiles(ctx, req.(*LocalfileMetaData))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _File_AssignRepication_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SDFSFileInfo)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FileServer).AssignRepication(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.File/AssignRepication",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FileServer).AssignRepication(ctx, req.(*SDFSFileInfo))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -249,7 +884,70 @@ var File_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "NodeLeave",
 			Handler:    _File_NodeLeave_Handler,
 		},
+		{
+			MethodName: "ClusterStatus",
+			Handler:    _File_ClusterStatus_Handler,
+		},
+		{
+			MethodName: "GetLeader",
+			Handler:    _File_GetLeader_Handler,
+		},
+		{
+			MethodName: "TriggerElection",
+			Handler:    _File_TriggerElection_Handler,
+		},
+		{
+			MethodName: "SyncComplete",
+			Handler:    _File_SyncComplete_Handler,
+		},
+		{
+			MethodName: "GetLocalfile",
+			Handler:    _File_GetLocalfile_Handler,
+		},
+		{
+			MethodName: "RegisterFile",
+			Handler:    _File_RegisterFile_Handler,
+		},
+		{
+			MethodName: "GetFileInfo",
+			Handler:    _File_GetFileInfo_Handler,
+		},
+		{
+			MethodName: "UpdateGlobalFiles",
+			Handler:    _File_UpdateGlobalFiles_Handler,
+		},
+		{
+			MethodName: "AssignRepication",
+			Handler:    _File_AssignRepication_Handler,
+		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "SyncMetadata",
+			Handler:       _File_SyncMetadata_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "GetGlobalFiles",
+			Handler:       _File_GetGlobalFiles_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "GetLocalFiles",
+			Handler:       _File_GetLocalFiles_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "GetFile",
+			Handler:       _File_GetFile_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WriteFile",
+			Handler:       _File_WriteFile_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "proto/rpc_server.proto",
 }

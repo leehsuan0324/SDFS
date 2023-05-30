@@ -23,4 +23,4 @@ build/main: build ./main/main.go
 	go build  -o build/main ./main/main.go
 
 proto/mp3.pb.go: proto/mp3.proto
-	protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative  proto/mp3.proto
+	protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative  proto/grpc_server.proto

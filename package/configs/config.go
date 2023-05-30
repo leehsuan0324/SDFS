@@ -28,3 +28,6 @@ var MP2_SENDER_2_PORT = "19485"
 var MP2_SENDER_3_PORT = "19484"
 var FAIL_TIMEOUT = time.Second * 2
 var DELETED_TIMEOUT = time.Second * 5
+var REPLICATIONNUM = int(5)
+var WRITEACKED = int(4)
+var FILEPATH = "/tmp/"

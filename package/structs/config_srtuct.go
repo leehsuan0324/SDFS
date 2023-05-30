@@ -3,13 +3,12 @@ package mystruct
 type Node struct {
 	Ip, Host string
 }
-type Server_info struct {
+type ServerInfo struct {
 	Log       string
 	Host_name string
 	Host_num  int
-	Master    Master_node
 }
-type Master_node struct {
+type MasterNode struct {
 	Number int8
 	Status int8
 }

@@ -1,12 +1,16 @@
 package friendship_manager
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"net"
 	"time"
 	"workspace/package/configs"
 	"workspace/package/logger"
+	pb "workspace/proto"
+
+	"google.golang.org/grpc"
 )
 
 type Machine_status struct {
@@ -23,10 +27,13 @@ type Udp_connection_manager struct {
 	Receive_server                            *net.UDPConn
 	Send_server1, Send_server2, Send_server3  *net.UDPConn
 	Task_channel, Job_channel, Result_channel chan Udp_connection_packet
+	Deleted_channel                           chan int
 }
 
 var UCM Udp_connection_manager
 var Status_string []string
+
+// var Friendmgr_wg sync.WaitGroup
 
 // This define the functionality of a udp packet
 const (
@@ -60,6 +67,7 @@ const (
 const (
 	Unknown int8 = iota
 	Joining
+	Joined
 	Running
 	Suspicious
 	Failure
@@ -70,23 +78,29 @@ const (
 
 // Init the host state and start udp listener
 func Membership_manager() {
-	membership_manager_init()
-	defer membership_manager_end()
+	// membership_manager_init()
+	// defer membership_manager_end()
 	go udp_receiver()
 	go udp_sender(UCM.Send_server1)
 	go udp_sender(UCM.Send_server2)
 	go udp_sender(UCM.Send_server3)
 	go task_manager()
 	go update_manager()
-
-	time.Sleep(time.Second)
-	// cnt := 1
+	go node_status_manager()
+	cnt := 1
 
 	// Every a second, create Ping job
 	for {
-		create_job(Ping_request, int8(configs.Myself.Host_num))
+		if cnt == 2 {
+			cnt = 0
+			create_job(Ping_request, int8(configs.Myself.Host_num))
+		}
 		create_update()
-		time.Sleep(time.Second)
+		if UCM.Alive_list[configs.Myself.Host_num].Status == Deleted {
+			logger.Nodelogger.Fatalf("[KILLMYSELF] Stop the server.")
+		}
+		time.Sleep(time.Millisecond * 500)
+		cnt++
 	}
 }
 
@@ -128,62 +142,80 @@ func update_manager() {
 			for i := 1; i < len(UCM.Alive_list); i++ {
 				updated += alive_list_update(&result, int8(i), int8(i))
 			}
-			if updated > 0 {
-				logger.Nodelogger.Debugf("[update_manager] Receive Ping from %v, Alive List Updated.", configs.Servers[src].Host)
-			} else {
-				logger.Nodelogger.Debugf("[update_manager] Receive Ping from %v, No Need to Update!", configs.Servers[src].Host)
-			}
 		case Ping_response:
 			for i := 1; i < len(UCM.Alive_list); i++ {
 				updated += alive_list_update(&result, int8(i), int8(i))
 			}
-			if updated > 0 {
-				logger.Nodelogger.Debugf("[update_manager] [update_manager]Receive Ack from %v, Alive List Updated.", configs.Servers[src].Host)
-			} else {
-				logger.Nodelogger.Debugf("[update_manager] Receive Ack from %v, No Need to Update!", configs.Servers[src].Host)
+			if UCM.Alive_list[src].Status == Suspicious {
+				logger.Nodelogger.Infof("update_manager: %v From Suspicious to Running", configs.Servers[src].Host)
+				UCM.Alive_list[src].Status = Running
+				UCM.Alive_list[src].Incarnation++
 			}
 		case Update_request:
+			cnt := 0
 			for i := 1; i < len(UCM.Alive_list); i++ {
+
 				if UCM.Alive_list[i].Status == Suspicious && UCM.Alive_list[i].Timestamp+2000 < time.Now().UnixMilli() {
 					logger.Nodelogger.Infof("[update_manager] Timeout. Update %v from %v to %v", configs.Servers[i].Host, Status_string[UCM.Alive_list[i].Status], Status_string[Failure])
 					UCM.Alive_list[i].Status = Failure
 					UCM.Alive_list[i].Timestamp = time.Now().UnixMilli()
-					// election_channel <- false
-				} else if (UCM.Alive_list[i].Status == Failure || UCM.Alive_list[i].Status == Left) && UCM.Alive_list[i].Timestamp+5000 < time.Now().UnixMilli() {
+					updated++
+
+				} else if (UCM.Alive_list[i].Status == Failure || UCM.Alive_list[i].Status == Left) && UCM.Alive_list[i].Timestamp+1000 < time.Now().UnixMilli() {
 					logger.Nodelogger.Infof("[update_manager] Timeout. Update %v from %v to %v", configs.Servers[i].Host, Status_string[UCM.Alive_list[i].Status], Status_string[Deleted])
 					UCM.Alive_list[i].Status = Deleted
 					UCM.Alive_list[i].Timestamp = time.Now().UnixMilli()
-					// election_channel <- false
+					// updated++
+					UCM.Deleted_channel <- 1
+				} else if UCM.Alive_list[i].Status == Unknown {
+					cnt++
 				}
+			}
+			if cnt == 0 && UCM.Alive_list[configs.Myself.Host_num].Status == Joining {
+				UCM.Alive_list[configs.Myself.Host_num].Status = Joined
+				logger.Nodelogger.Infof("[alive_list_update] Update %v (myself) from Joining to Joined", configs.Servers[configs.Myself.Host_num].Host)
+				updated++
 			}
 		case Leave_request:
 			logger.Nodelogger.Infof("[update_manager] Update %v from %v to %v", configs.Servers[configs.Myself.Host_num].Host, Status_string[UCM.Alive_list[configs.Myself.Host_num].Status], Status_string[Left])
 			UCM.Alive_list[configs.Myself.Host_num].Status = Left
 			UCM.Alive_list[configs.Myself.Host_num].Timestamp = time.Now().UnixMilli()
-
+			updated++
 		case Connection_fail:
-			if UCM.Alive_list[dst].Status == Running || UCM.Alive_list[dst].Status == Joining || UCM.Alive_list[dst].Status == Unknown {
+			if UCM.Alive_list[dst].Status == Running || UCM.Alive_list[dst].Status == Joining || UCM.Alive_list[dst].Status == Joined || UCM.Alive_list[dst].Status == Unknown {
 				logger.Nodelogger.Warnf("[update_manager] Update %v from %v to %v", configs.Servers[dst].Host, Status_string[UCM.Alive_list[dst].Status], Status_string[Suspicious])
 				updated++
 				UCM.Alive_list[dst].Status = Suspicious
 				UCM.Alive_list[dst].Timestamp = time.Now().UnixMilli()
 			}
-			if updated > 0 {
-				logger.Nodelogger.Debugf("[update_manager] Receive Connection Error from %v to %v, Alive List Updated.", configs.Servers[src].Host, configs.Servers[dst].Host)
-			} else {
-				logger.Nodelogger.Debugf("[update_manager] Receive Connection Error from %v, No Need to Update!", configs.Servers[src].Host)
-			}
 		}
-
+		if updated > 0 {
+			UCM.Deleted_channel <- 0
+		}
 	}
+}
+func node_status_manager() {
+	for {
+		pos := <-UCM.Deleted_channel
+		startElection(pos)
+	}
+}
+func startElection(pos int) {
+	service := "0.0.0.0" + ":" + configs.FILE_SERVER_PORT
+	conn, err := grpc.Dial(service, grpc.WithInsecure())
+	if !logger.CheckError(err) {
+		logger.Nodelogger.Errorf("Fail to dial with master node\n")
+	}
+	defer conn.Close()
+	client := pb.NewFileClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err = client.TriggerElection(ctx, &pb.StatusMsg{Status: int32(pos)})
+	logger.Nodelogger.Debugf("Success to Trigger Election")
 }
 func udp_sender(listener *net.UDPConn) {
 	for {
 		task := <-UCM.Task_channel
-		if UCM.Alive_list[task.Flag[Dst_num]].Status == Failure || UCM.Alive_list[task.Flag[Dst_num]].Status == Deleted || UCM.Alive_list[task.Flag[Dst_num]].Status == Left {
-			logger.Nodelogger.Warnf("[udp_sender] Drop task %v", task)
-			continue
-		}
 
 		msg := EncodeToBytes(&task)
 		service := fmt.Sprintf("%s:%s", configs.Servers[task.Flag[2]].Ip, "19487")
@@ -195,9 +227,13 @@ func udp_sender(listener *net.UDPConn) {
 			if get {
 				break
 			}
+			if UCM.Alive_list[task.Flag[Dst_num]].Status == Failure || UCM.Alive_list[task.Flag[Dst_num]].Status == Deleted || UCM.Alive_list[task.Flag[Dst_num]].Status == Left {
+				logger.Nodelogger.Warnf("[udp_sender] Drop %v's task", configs.Servers[Dst_num].Host)
+				break
+			}
 
 			listener.WriteToUDP([]byte(msg), dst)
-			listener.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+			listener.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 
 			for {
 				if get {
@@ -267,20 +303,23 @@ func udp_receiver() {
 
 func choose_k_alive_server(k int) []int {
 	pos := configs.Myself.Host_num + 1
+	if pos == len(configs.Servers) {
+		pos = 1
+	}
 	cnt := 0
 	alives := make([]int, 0)
 	for {
 		if cnt == k || pos == configs.Myself.Host_num {
 			break
 		}
-		if pos == len(configs.Servers) {
-			pos = 1
-		}
 		if UCM.Alive_list[pos].Status != Failure && UCM.Alive_list[pos].Status != Left && UCM.Alive_list[pos].Status != Deleted {
 			alives = append(alives, pos)
 			cnt++
 		}
 		pos++
+		if pos == len(configs.Servers) {
+			pos = 1
+		}
 	}
 	return alives
 }
@@ -289,20 +328,18 @@ func create_job(job_num int8, target int8) {
 	job.Flag[J_type] = job_num
 	job.Flag[Src_num] = int8(configs.Myself.Host_num)
 	job.Flag[P_target] = target
-
 	UCM.Job_channel <- job
 }
 func create_update() {
 	result := Udp_connection_packet{}
 	result.Flag[J_type] = Update_request
-
 	UCM.Result_channel <- result
 }
 func alive_list_update(result *Udp_connection_packet, target int8, position int8) int {
 	updated := 0
 
 	if position == int8(configs.Myself.Host_num) {
-		if result.Data[position].Status == Failure || result.Data[position].Status == Left {
+		if result.Data[position].Status == Failure {
 			logger.Nodelogger.Fatalf("[alive_list_update] %v. Stop the server.", Status_string[result.Data[position].Status])
 		} else if result.Data[position].Status != UCM.Alive_list[target].Status {
 			if result.Data[position].Incarnation > UCM.Alive_list[target].Incarnation {
@@ -315,10 +352,10 @@ func alive_list_update(result *Udp_connection_packet, target int8, position int8
 				UCM.Alive_list[target].Incarnation = result.Data[position].Incarnation + 1
 			}
 		} else {
-			if result.Data[position].Status == Joining {
-				UCM.Alive_list[target].Status = Running
-				logger.Nodelogger.Infof("[alive_list_update] Update %v (myself) from Joining to Running", configs.Servers[position].Host)
-				// election_channel <- true
+			if UCM.Alive_list[configs.Myself.Host_num].Status == Joined && result.Data[position].Incarnation == UCM.Alive_list[target].Incarnation {
+				UCM.Alive_list[configs.Myself.Host_num].Status = Running
+				logger.Nodelogger.Infof("[alive_list_update] Update %v (myself) from Joined to Running", configs.Servers[configs.Myself.Host_num].Host)
+				updated++
 			}
 			if UCM.Alive_list[target].Incarnation < result.Data[position].Incarnation {
 				UCM.Alive_list[target].Incarnation = result.Data[position].Incarnation
@@ -335,15 +372,24 @@ func alive_list_update(result *Udp_connection_packet, target int8, position int8
 				// election_channel <- false
 			}
 		} else if result.Data[position].Incarnation > UCM.Alive_list[target].Incarnation {
-			logger.Nodelogger.Infof("[alive_list_update] Update %v from %v to %v", configs.Servers[position].Host, Status_string[UCM.Alive_list[target].Status], Status_string[result.Data[position].Status])
-			updated++
+			logger.Nodelogger.Infof("[alive_list_update] Incarnation Update %v from %v to %v", configs.Servers[position].Host, Status_string[UCM.Alive_list[target].Status], Status_string[result.Data[position].Status])
+			if result.Data[position].Status == Deleted {
+				UCM.Deleted_channel <- 1
+			} else {
+				updated++
+			}
+
 			UCM.Alive_list[target].Status = result.Data[position].Status
 			UCM.Alive_list[target].Incarnation = result.Data[position].Incarnation
 			UCM.Alive_list[target].Timestamp = time.Now().UnixMilli()
 		} else if result.Data[position].Incarnation == UCM.Alive_list[target].Incarnation {
 			if result.Data[position].Status > UCM.Alive_list[target].Status {
-				logger.Nodelogger.Infof("[alive_list_update] Update %v from %v to %v", configs.Servers[position].Host, Status_string[UCM.Alive_list[target].Status], Status_string[result.Data[position].Status])
-				updated++
+				logger.Nodelogger.Infof("[alive_list_update] Status Update %v from %v to %v", configs.Servers[position].Host, Status_string[UCM.Alive_list[target].Status], Status_string[result.Data[position].Status])
+				if result.Data[position].Status == Deleted {
+					UCM.Deleted_channel <- 1
+				} else {
+					updated++
+				}
 				UCM.Alive_list[target].Status = result.Data[position].Status
 				UCM.Alive_list[target].Timestamp = time.Now().UnixMilli()
 			}
@@ -351,15 +397,16 @@ func alive_list_update(result *Udp_connection_packet, target int8, position int8
 	}
 	return updated
 }
-func membership_manager_init() {
+func Membership_manager_init() {
 	UCM = Udp_connection_manager{}
 	UCM.Alive_list = make([]Machine_status, len(configs.Servers))
 	UCM.Job_channel = make(chan Udp_connection_packet, 10)
 	UCM.Task_channel = make(chan Udp_connection_packet, 30)
 	UCM.Result_channel = make(chan Udp_connection_packet, 90)
+	UCM.Deleted_channel = make(chan int, 10)
 	// UCM.udp_server_wg.Add(4)
 
-	Status_string = []string{"Unknown", "Joining", "Running", "Suspicious", "Failure", "Leaving", "Left", "Deleted"}
+	Status_string = []string{"Unknown", "Joining", "Joined", "Running", "Suspicious", "Failure", "Leaving", "Left", "Deleted"}
 
 	udpAddr, err := net.ResolveUDPAddr("udp", ":"+configs.MP2_RECEIVER_PORT)
 	logger.CheckFatal(err)
@@ -386,7 +433,7 @@ func membership_manager_init() {
 	logger.Nodelogger.Infof("[udp_connection_management_init] ListenUDP Success %v", udpAddr)
 
 	for i := 1; i < len(configs.Servers); i++ {
-		UCM.Alive_list[i] = Machine_status{Status: Unknown, Timestamp: int64(0), Incarnation: -1}
+		UCM.Alive_list[i] = Machine_status{Status: Unknown, Timestamp: int64(0), Incarnation: 0}
 	}
 
 	UCM.Alive_list[configs.Myself.Host_num].Status = Joining
@@ -395,7 +442,7 @@ func membership_manager_init() {
 	logger.Nodelogger.Infof("[udp_connection_management_init] Init Alive list %v", UCM.Alive_list)
 }
 
-func membership_manager_end() {
+func Membership_manager_end() {
 	UCM.Send_server1.Close()
 	UCM.Send_server2.Close()
 	UCM.Send_server3.Close()

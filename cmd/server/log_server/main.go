@@ -20,9 +20,9 @@ func main() {
 
 	server_init()
 
-	rpcserver.Log_server_init()
+	rpcserver.LogServerInit()
 
 }
 func server_init() {
-	lg.Logger_init(configs.Myself.Log)
+	lg.LoggerInit(configs.Myself.Log)
 }
