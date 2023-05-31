@@ -99,3 +99,27 @@ func GrpcGlobalFiles() {
 		fmt.Printf("Name: %v, Incarnation: %v, Status: %v, Location: %v, Acked: %v\n", fileinfo.FMeta.Filename, fileinfo.FMeta.Incarnation, fileinfo.FMeta.Status, fileinfo.Writing, fileinfo.Acked)
 	}
 }
+func CallGetLocalfile(host int, finfo mystruct.FileInfo) mystruct.Metadata {
+	service := cf.Servers[host].Ip + ":" + cf.FILE_SERVER_PORT
+	conn, err := grpc.Dial(service, grpc.WithInsecure())
+	if err != nil {
+		return mystruct.Metadata{}
+	}
+	defer conn.Close()
+	client := pb.NewFileClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	resp, err := client.GetFileMetaData(ctx, &pb.MetaData{
+		Filename:    finfo.FMeta.Filename,
+		Incarnation: int32(finfo.FMeta.Incarnation),
+	})
+	if err != nil {
+		return mystruct.Metadata{}
+	}
+	return mystruct.Metadata{
+		Incarnation: int(resp.Incarnation),
+		Status:      int8(resp.Status),
+		Filename:    resp.Filename,
+	}
+}

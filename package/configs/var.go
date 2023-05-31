@@ -13,7 +13,7 @@ const (
 const (
 	FSFailed int32 = iota
 	FSWriting
-	FSWrited
+	// FSWrited
 	FSSuccess
 )
 

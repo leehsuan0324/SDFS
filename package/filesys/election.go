@@ -145,7 +145,7 @@ func CheckReplication() {
 	defer GlobalFiles_Mu.Unlock()
 	for filename, globalfs := range GlobalFiles {
 		for pos := range globalfs.Versions {
-			if globalfs.Versions[pos].FMeta.Status == int8(cf.FSSuccess) && (len(globalfs.Versions[pos].Acked)+len(globalfs.Versions[pos].Writing) < 4) {
+			if globalfs.Versions[pos].FMeta.Status == int8(cf.FSSuccess) && (len(globalfs.Versions[pos].Acked)+len(globalfs.Versions[pos].Writing) < 5) {
 				lg.Nodelogger.Infof("CheckReplication: Start to Re-Replication %v.v%v %v %v", filename, globalfs.Versions[pos].FMeta.Incarnation, globalfs.Versions[pos].Acked, globalfs.Versions[pos].Writing)
 				// do something
 				MakeReplication(&globalfs, pos)
@@ -164,7 +164,7 @@ func MakeReplication(globalfs *mystruct.FileMenu, pos int) {
 		StartLocation = 1
 	}
 	for i := range assigned {
-		if len(globalfs.Versions[pos].Acked)+len(globalfs.Versions[pos].Writing) >= 4 {
+		if len(globalfs.Versions[pos].Acked)+len(globalfs.Versions[pos].Writing) >= 5 {
 			break
 		}
 		find := false

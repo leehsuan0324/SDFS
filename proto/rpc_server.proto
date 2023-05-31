@@ -31,33 +31,38 @@ message LogResponse{
 }
 
 service File{
-    // control
+    // Debug Function
     rpc NodeLeave(Empty) returns (LeaveResponse){}
     rpc ClusterStatus(Empty) returns (MachinesStatus){}
     rpc GetLeader(Empty) returns (LeaderInfo){}
-    
-    // trigger election
-    rpc TriggerElection(StatusMsg) returns (Empty){} 
+    rpc GetGlobalFiles(Empty) returns(stream SDFSFileInfo){}
+    rpc GetLocalFiles(Empty) returns(stream MetaData){}
     
     // election
-    // rpc SetAndSync(LeaderInfo) returns (stream NodeFileMetadata){}
+    // trigger election
+    rpc TriggerElection(StatusMsg) returns (Empty){} 
     rpc SyncMetadata(stream LocalfileMetaData) returns (LeaderInfo){}
     rpc SyncComplete(LeaderInfo) returns (Empty){}
     
-    // File server
-    rpc GetGlobalFiles(Empty) returns(stream SDFSFileInfo){}
-    rpc GetLocalFiles(Empty) returns(stream MetaData){}
-    rpc GetLocalfile(MetaData) returns(MetaData){}
-    
+    // File System
+    // Main Function
+    // Register sdfsfilename and get Incarnation number and Writing Destination
     rpc RegisterFile(MetaData) returns(SDFSFileInfo){}
+    // Get FileInfo from Leader, Including Acked[] and Incarnation
     rpc GetFileInfo(MetaData) returns(SDFSFileInfo){}
+    // Get File MetaData from Followers, Check whether the Latest
+    rpc GetFileMetaData(MetaData) returns(MetaData){}
+    // Get File Data from Followers
     rpc GetFile(MetaData) returns(stream FileData){}
-    
-    rpc WriteFile(stream FileData) returns(stream StatusMsg){}
+    // Write File into Server 
+    rpc WriteFile(stream FileData) returns(stream StatusMsg){} 
+    //
+    rpc DeleteFile(MetaData) returns(Empty){} 
+
+    // Sub Function
     rpc UpdateGlobalFiles(LocalfileMetaData) returns(Empty){}
     rpc AssignRepication(SDFSFileInfo) returns(Empty){}
-    // rpc UpdateGlobalFiles(LocalfileMetaData) returns(Empty){}
-    // rpc GetReplicationLocation(FileMetaData) returns(FileMetaData){}
+    rpc DeleteLocalFile(MetaData) returns(Empty){} 
 }
 message LeaveResponse{
     int32 Status = 1;

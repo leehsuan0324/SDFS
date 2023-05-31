@@ -90,7 +90,7 @@ func choose_k_alive_server(k int, start int) []int32 {
 	lg.Nodelogger.Infof("alives: %v", alives)
 	return alives
 }
-func DeleteLFs(filename string, incarnation int) error {
+func RemoveLFs(filename string, incarnation int) error {
 	LocalFiles_Mu.Lock()
 	defer LocalFiles_Mu.Unlock()
 
@@ -172,7 +172,7 @@ func CreateLFs(fmeta *mystruct.Metadata) error {
 	lg.Nodelogger.Infof("UpdateAndCreateLocalFiles: %v", LocalFiles[fmeta.Filename])
 	return nil
 }
-func DeleteGFs(LFmetadata *pb.LocalfileMetaData) error {
+func RemoveGFs(LFmetadata *pb.LocalfileMetaData) error {
 
 	GlobalFiles_Mu.Lock()
 	defer GlobalFiles_Mu.Unlock()
@@ -185,12 +185,14 @@ func DeleteGFs(LFmetadata *pb.LocalfileMetaData) error {
 		if int32(Globalfs.Versions[i].FMeta.Incarnation) == LFmetadata.FMeta.Incarnation {
 			for j := 0; j < len(Globalfs.Versions[i].Writing); j++ {
 				if Globalfs.Versions[i].Writing[j] == LFmetadata.Host {
+
 					Globalfs.Versions[i].Writing[j] = Globalfs.Versions[i].Writing[len(Globalfs.Versions[i].Writing)-1]
 					Globalfs.Versions[i].Writing = Globalfs.Versions[i].Writing[:len(Globalfs.Versions[i].Writing)-1]
 				}
 			}
 			for j := 0; j < len(Globalfs.Versions[i].Acked); j++ {
 				if Globalfs.Versions[i].Acked[j] == LFmetadata.Host {
+
 					Globalfs.Versions[i].Acked[j] = Globalfs.Versions[i].Acked[len(Globalfs.Versions[i].Acked)-1]
 					Globalfs.Versions[i].Acked = Globalfs.Versions[i].Acked[:len(Globalfs.Versions[i].Acked)-1]
 				}
@@ -198,13 +200,18 @@ func DeleteGFs(LFmetadata *pb.LocalfileMetaData) error {
 			if len(Globalfs.Versions[i].Acked)+len(Globalfs.Versions[i].Writing) == 0 {
 				Globalfs.Versions[i] = Globalfs.Versions[len(Globalfs.Versions)-1]
 				Globalfs.Versions = Globalfs.Versions[:len(Globalfs.Versions)-1]
+			} else {
+				if Globalfs.Versions[i].FMeta.Status == int8(cf.FSSuccess) && (len(Globalfs.Versions[i].Acked)+len(Globalfs.Versions[i].Writing) < 5) && Leader.Status == Stable {
+					MakeReplication(&Globalfs, i)
+				}
 			}
-			if Globalfs.Versions[i].FMeta.Status == int8(cf.FSSuccess) && len(Globalfs.Versions[i].Acked) < 4 {
-				MakeReplication(&Globalfs, i)
-			}
+			break
 		}
 	}
-
+	GlobalFiles[LFmetadata.FMeta.Filename] = mystruct.FileMenu{
+		NextIncarnation: Globalfs.NextIncarnation,
+		Versions:        Globalfs.Versions,
+	}
 	return nil
 }
 func UpdateGFs(LFmetadata *pb.LocalfileMetaData) error {
@@ -226,51 +233,55 @@ func UpdateGFs(LFmetadata *pb.LocalfileMetaData) error {
 			}},
 		}
 	}
-	Globalfs := GlobalFiles[LFmetadata.FMeta.Filename].Versions
+	Globalfs := GlobalFiles[LFmetadata.FMeta.Filename]
 	find := false
-	for i := 0; i < len(Globalfs); i++ {
-		if int32(Globalfs[i].FMeta.Incarnation) == LFmetadata.FMeta.Incarnation {
+	for i := 0; i < len(Globalfs.Versions); i++ {
+		if int32(Globalfs.Versions[i].FMeta.Incarnation) == LFmetadata.FMeta.Incarnation {
 			find = true
 			if LFmetadata.FMeta.Status == cf.FSSuccess {
-				Globalfs[i].FMeta.Status = int8(cf.FSSuccess)
-				for j := 0; j < len(Globalfs[i].Writing); j++ {
-					if Globalfs[i].Writing[j] == LFmetadata.Host {
-						Globalfs[i].Writing[j] = Globalfs[i].Writing[len(Globalfs[i].Writing)-1]
-						Globalfs[i].Writing = Globalfs[i].Writing[:len(Globalfs[i].Writing)-1]
-						lg.Nodelogger.Infof("UpdateGFs: %v %v", Globalfs[i].Writing, len(Globalfs[i].Writing))
+				Globalfs.Versions[i].FMeta.Status = int8(cf.FSSuccess)
+				for j := 0; j < len(Globalfs.Versions[i].Writing); j++ {
+					if Globalfs.Versions[i].Writing[j] == LFmetadata.Host {
+						Globalfs.Versions[i].Writing[j] = Globalfs.Versions[i].Writing[len(Globalfs.Versions[i].Writing)-1]
+						Globalfs.Versions[i].Writing = Globalfs.Versions[i].Writing[:len(Globalfs.Versions[i].Writing)-1]
+						// lg.Nodelogger.Infof("UpdateGFs: %v %v", Globalfs[i].Writing, len(Globalfs[i].Writing))
 					}
 				}
 				jg := false
-				for j := range Globalfs[i].Acked {
-					if Globalfs[i].Acked[j] == LFmetadata.Host {
+				for j := range Globalfs.Versions[i].Acked {
+					if Globalfs.Versions[i].Acked[j] == LFmetadata.Host {
 						jg = true
 					}
 				}
 				if !jg {
-					Globalfs[i].Acked = append(Globalfs[i].Acked, LFmetadata.Host)
+					Globalfs.Versions[i].Acked = append(Globalfs.Versions[i].Acked, LFmetadata.Host)
 				}
 			} else if LFmetadata.FMeta.Status == cf.FSWriting {
-				if Globalfs[i].FMeta.Status != int8(cf.FSSuccess) {
-					Globalfs[i].FMeta.Status = int8(cf.FSWriting)
+				if Globalfs.Versions[i].FMeta.Status != int8(cf.FSSuccess) {
+					Globalfs.Versions[i].FMeta.Status = int8(cf.FSWriting)
 				}
 				jg := false
-				for j := range Globalfs[i].Writing {
-					if Globalfs[i].Writing[j] == LFmetadata.Host {
+				for j := range Globalfs.Versions[i].Writing {
+					if Globalfs.Versions[i].Writing[j] == LFmetadata.Host {
 						jg = true
 					}
 				}
 				if !jg {
-					Globalfs[i].Writing = append(Globalfs[i].Writing, LFmetadata.Host)
+					Globalfs.Versions[i].Writing = append(Globalfs.Versions[i].Writing, LFmetadata.Host)
 				}
 			} else {
 				return errors.New("UpdateGFs: Other status, Should Not Appear")
+			}
+
+			if Globalfs.Versions[i].FMeta.Status == int8(cf.FSSuccess) && (len(Globalfs.Versions[i].Acked)+len(Globalfs.Versions[i].Writing) < 5) && Leader.Status == Stable {
+				MakeReplication(&Globalfs, i)
 			}
 			break
 		}
 	}
 	if !find {
 		if int8(LFmetadata.FMeta.Status) == int8(configs.FSSuccess) {
-			Globalfs = append(Globalfs, mystruct.FileInfo{
+			Globalfs.Versions = append(Globalfs.Versions, mystruct.FileInfo{
 				FMeta: mystruct.Metadata{
 					Incarnation: int(LFmetadata.FMeta.Incarnation),
 					Status:      int8(LFmetadata.FMeta.Status),
@@ -280,7 +291,7 @@ func UpdateGFs(LFmetadata *pb.LocalfileMetaData) error {
 				Acked:   []int32{LFmetadata.Host},
 			})
 		} else {
-			Globalfs = append(Globalfs, mystruct.FileInfo{
+			Globalfs.Versions = append(Globalfs.Versions, mystruct.FileInfo{
 				FMeta: mystruct.Metadata{
 					Incarnation: int(LFmetadata.FMeta.Incarnation),
 					Status:      int8(LFmetadata.FMeta.Status),
@@ -290,15 +301,18 @@ func UpdateGFs(LFmetadata *pb.LocalfileMetaData) error {
 				Acked:   []int32{},
 			})
 		}
-		sort.Slice(Globalfs, func(i, j int) bool {
-			return Globalfs[i].FMeta.Incarnation < Globalfs[j].FMeta.Incarnation
+		// May need to Fix
+		//
+		sort.Slice(Globalfs.Versions, func(i, j int) bool {
+			return Globalfs.Versions[i].FMeta.Incarnation < Globalfs.Versions[j].FMeta.Incarnation
 		})
 	}
 
 	GlobalFiles[LFmetadata.FMeta.Filename] = mystruct.FileMenu{
-		NextIncarnation: Globalfs[len(Globalfs)-1].FMeta.Incarnation + 1,
-		Versions:        Globalfs,
+		NextIncarnation: Globalfs.Versions[len(Globalfs.Versions)-1].FMeta.Incarnation + 1,
+		Versions:        Globalfs.Versions,
 	}
+
 	return nil
 }
 func RegisterGFs(filename string) (mystruct.FileInfo, error) {
@@ -333,6 +347,7 @@ func RegisterGFs(filename string) (mystruct.FileInfo, error) {
 	return fmetadata, nil
 
 }
+
 func ReReplication(finfo mystruct.FileInfo) {
 	maxID := 0
 	target := 0
@@ -380,7 +395,7 @@ func ReReplication(finfo mystruct.FileInfo) {
 				Status:      int8(cf.FSFailed),
 				Filename:    finfo.FMeta.Filename,
 			})
-			DeleteLFs(finfo.FMeta.Filename, finfo.FMeta.Incarnation)
+			RemoveLFs(finfo.FMeta.Filename, finfo.FMeta.Incarnation)
 			return
 		}
 		defer conn.Close()
@@ -396,7 +411,7 @@ func ReReplication(finfo mystruct.FileInfo) {
 		})
 		if err != nil {
 			lg.Nodelogger.Errorf("ReReplication: Fail to Call %v GetFile\n", configs.Servers[target].Host)
-			DeleteLFs(finfo.FMeta.Filename, finfo.FMeta.Incarnation)
+			RemoveLFs(finfo.FMeta.Filename, finfo.FMeta.Incarnation)
 			CallUpdateGFs(&mystruct.Metadata{
 				Incarnation: finfo.FMeta.Incarnation,
 				Status:      int8(cf.FSFailed),
@@ -418,7 +433,7 @@ func ReReplication(finfo mystruct.FileInfo) {
 			}
 			if err != nil {
 				lg.Nodelogger.Errorf("CallGetFile: Get File Failed %v\n", configs.Servers[target].Host)
-				DeleteLFs(finfo.FMeta.Filename, finfo.FMeta.Incarnation)
+				RemoveLFs(finfo.FMeta.Filename, finfo.FMeta.Incarnation)
 				CallUpdateGFs(&mystruct.Metadata{
 					Incarnation: finfo.FMeta.Incarnation,
 					Status:      int8(cf.FSFailed),
@@ -430,7 +445,7 @@ func ReReplication(finfo mystruct.FileInfo) {
 				localfile.Write(data.Data)
 			} else {
 				lg.Nodelogger.Errorf("CallGetFile: Not Data %v, return\n", configs.Servers[target].Host)
-				DeleteLFs(finfo.FMeta.Filename, finfo.FMeta.Incarnation)
+				RemoveLFs(finfo.FMeta.Filename, finfo.FMeta.Incarnation)
 				CallUpdateGFs(&mystruct.Metadata{
 					Incarnation: finfo.FMeta.Incarnation,
 					Status:      int8(cf.FSFailed),
@@ -476,7 +491,7 @@ func CallGetLocalfile(host int, finfo mystruct.FileInfo) mystruct.Metadata {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	resp, err := client.GetLocalfile(ctx, &pb.MetaData{
+	resp, err := client.GetFileMetaData(ctx, &pb.MetaData{
 		Filename:    finfo.FMeta.Filename,
 		Incarnation: int32(finfo.FMeta.Incarnation),
 	})
@@ -489,6 +504,25 @@ func CallGetLocalfile(host int, finfo mystruct.FileInfo) mystruct.Metadata {
 		Status:      int8(resp.Status),
 		Filename:    resp.Filename,
 	}
+}
+func CallDeleteLocalFile(host int, filename string) {
+	service := cf.Servers[host].Ip + ":" + cf.FILE_SERVER_PORT
+	conn, err := grpc.Dial(service, grpc.WithInsecure())
+	if !lg.CheckError(err) {
+		return
+	}
+	defer conn.Close()
+	client := pb.NewFileClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	_, err = client.DeleteLocalFile(ctx, &pb.MetaData{
+		Filename: filename,
+	})
+	if err != nil {
+		lg.Nodelogger.Error(err)
+	}
+
 }
 
 // --------------------------------------------------------------
@@ -524,6 +558,7 @@ func (sdfs *FileServer) RegisterFile(ctx context.Context, Regfile *pb.MetaData) 
 		lg.Nodelogger.Infof("RegisterFile: Start Receive Registration Req from user")
 
 		fmetadata, err := RegisterGFs(Regfile.Filename)
+
 		return &pb.SDFSFileInfo{
 			FMeta: &pb.MetaData{
 				Status:      int32(fmetadata.FMeta.Status),
@@ -552,7 +587,7 @@ func (sdfs *FileServer) WriteFile(stream pb.File_WriteFileServer) error {
 			lg.Nodelogger.Infof("WriteFile: Write Client Error. DeletedLF")
 			lg.CheckError(fi.Close())
 			lg.CheckError(os.Remove(path))
-			lg.CheckError(DeleteLFs(filename, incarnation))
+			lg.CheckError(RemoveLFs(filename, incarnation))
 			lg.CheckError(CallUpdateGFs(&mystruct.Metadata{
 				Incarnation: incarnation,
 				Filename:    filename,
@@ -563,21 +598,38 @@ func (sdfs *FileServer) WriteFile(stream pb.File_WriteFileServer) error {
 		if data.Status == cf.PFData {
 			_, err = fi.Write(data.Data)
 			if !lg.CheckError(err) {
-				fi.Close()
+				lg.CheckError(fi.Close())
+				lg.CheckError(os.Remove(path))
+				lg.CheckError(RemoveLFs(filename, incarnation))
+				lg.CheckError(CallUpdateGFs(&mystruct.Metadata{
+					Incarnation: incarnation,
+					Filename:    filename,
+					Status:      int8(cf.FSFailed),
+				}))
 				return err
 			}
 		} else if data.Status == cf.PFEnd {
-			lg.Nodelogger.Infof("WriteFile: Write End. UpdateLS to FSWrited")
-			// err = UpdateLFs(filename, incarnation, int(configs.FSWrited))
-			// lg.CheckError(err)
-			stream.Send(&pb.StatusMsg{
-				Status: cf.FSWrited,
+			lg.Nodelogger.Infof("WriteFile: Write End. SendMsg")
+			err = stream.Send(&pb.StatusMsg{
+				Status: cf.FSWriting,
 			})
+			if err != nil {
+				lg.CheckError(fi.Close())
+				lg.CheckError(os.Remove(path))
+				lg.CheckError(RemoveLFs(filename, incarnation))
+				lg.CheckError(CallUpdateGFs(&mystruct.Metadata{
+					Incarnation: incarnation,
+					Filename:    filename,
+					Status:      int8(cf.FSFailed),
+				}))
+				return err
+			}
+
 		} else if data.Status == cf.PFError {
 			lg.Nodelogger.Infof("WriteFile: Write Client Error. DeletedLF")
 			lg.CheckError(fi.Close())
 			lg.CheckError(os.Remove(path))
-			lg.CheckError(DeleteLFs(filename, incarnation))
+			lg.CheckError(RemoveLFs(filename, incarnation))
 			lg.CheckError(CallUpdateGFs(&mystruct.Metadata{
 				Incarnation: incarnation,
 				Filename:    filename,
@@ -602,13 +654,19 @@ func (sdfs *FileServer) WriteFile(stream pb.File_WriteFileServer) error {
 			if !lg.CheckError(err) {
 				return err
 			}
+
 			err = CreateLFs(&fmeta)
 			if !lg.CheckError(err) {
-				fi.Close()
+				lg.CheckError(fi.Close())
+				lg.CheckError(os.Remove(path))
 				return err
 			}
+
 			err = CallUpdateGFs(&fmeta)
 			if !lg.CheckError(err) {
+				lg.CheckError(fi.Close())
+				lg.CheckError(os.Remove(path))
+				lg.CheckError(RemoveLFs(filename, incarnation))
 				fi.Close()
 				return err
 			}
@@ -617,15 +675,16 @@ func (sdfs *FileServer) WriteFile(stream pb.File_WriteFileServer) error {
 			lg.Nodelogger.Infof("WriteFile: Get PFSuccess Update LFs and GFs")
 			lg.CheckError(fi.Close())
 			lg.CheckError(UpdateLFs(filename, incarnation, int(configs.FSSuccess)))
+
 			err = CallUpdateGFs(&mystruct.Metadata{
 				Status:      int8(configs.FSSuccess),
 				Filename:    filename,
 				Incarnation: incarnation,
 			})
 			if !lg.CheckError(err) {
-				fi.Close()
 				return err
 			}
+
 			err = stream.Send(&pb.StatusMsg{
 				Status: cf.PFSuccess,
 			})
@@ -728,13 +787,13 @@ func (sdfs *FileServer) GetFile(fmeta *pb.MetaData, stream pb.File_GetFileServer
 func (sdfs *FileServer) UpdateGlobalFiles(ctx context.Context, fileinfo *pb.LocalfileMetaData) (*pb.Empty, error) {
 	if Leader.Number == int8(cf.Myself.Host_num) && Leader.Status == Stable {
 		if fileinfo.FMeta.Status != cf.FSFailed {
-			lg.Nodelogger.Infof("UpdateGlobalFiles: Get PFSuccess Update LFs and GFs")
+			lg.Nodelogger.Infof("UpdateGlobalFiles: Update GFs")
 			err := UpdateGFs(fileinfo)
 			lg.CheckError(err)
 			return &pb.Empty{}, err
 		} else {
-			lg.Nodelogger.Infof("UpdateGlobalFiles: Get PFSuccess Update LFs and GFs")
-			err := DeleteGFs(fileinfo)
+			lg.Nodelogger.Infof("UpdateGlobalFiles: Remove GFs")
+			err := RemoveGFs(fileinfo)
 			lg.CheckError(err)
 			return &pb.Empty{}, err
 		}
@@ -785,7 +844,7 @@ func (sdfs *FileServer) GetLocalFiles(fileinfo *pb.Empty, stream pb.File_GetLoca
 	}
 	return nil
 }
-func (sdfs *FileServer) GetLocalfile(ctx context.Context, fmeta *pb.MetaData) (*pb.MetaData, error) {
+func (sdfs *FileServer) GetFileMetaData(ctx context.Context, fmeta *pb.MetaData) (*pb.MetaData, error) {
 	LocalFiles_Mu.Lock()
 	defer LocalFiles_Mu.Unlock()
 	file, ok := LocalFiles[fmeta.Filename]
@@ -817,4 +876,64 @@ func (sdfs *FileServer) GetLocalfile(ctx context.Context, fmeta *pb.MetaData) (*
 	}
 
 	return &pb.MetaData{}, errors.New("No availiable file in the Server")
+}
+func (sdfs *FileServer) DeleteFile(ctx context.Context, fmeta *pb.MetaData) (*pb.Empty, error) {
+	if Leader.Number != int8(cf.Myself.Host_num) || Leader.Status != Stable {
+		return &pb.Empty{}, errors.New("GetGlobalFiles: Not leader or Still Init")
+	}
+	GlobalFiles_Mu.Lock()
+	defer GlobalFiles_Mu.Unlock()
+	lg.Nodelogger.Infof("Start to Delete %v", fmeta.Filename)
+	temp, ok := GlobalFiles[fmeta.Filename]
+	if !ok {
+		return &pb.Empty{}, errors.New("GetGlobalFiles: No Such File")
+	}
+	globalfs := temp.Versions
+	nodes := []int32{}
+	for _, globalf := range globalfs {
+		for _, node := range globalf.Acked {
+			find := false
+			for _, now := range nodes {
+				if now == node {
+					find = true
+				}
+			}
+			if !find {
+				nodes = append(nodes, node)
+			}
+		}
+		for _, node := range globalf.Writing {
+			find := false
+			for _, now := range nodes {
+				if now == node {
+					find = true
+				}
+			}
+			if !find {
+				nodes = append(nodes, node)
+			}
+		}
+	}
+	for _, target := range nodes {
+		go CallDeleteLocalFile(int(target), fmeta.Filename)
+	}
+	delete(GlobalFiles, fmeta.Filename)
+	lg.Nodelogger.Infof("Delete %v End", fmeta.Filename)
+	return &pb.Empty{}, nil
+}
+
+func (sdfs *FileServer) DeleteLocalFile(ctx context.Context, fmeta *pb.MetaData) (*pb.Empty, error) {
+	LocalFiles_Mu.Lock()
+	defer LocalFiles_Mu.Unlock()
+	localfs, ok := LocalFiles[fmeta.Filename]
+	if !ok {
+		return &pb.Empty{}, errors.New("No Such file in the Server")
+	}
+	for _, localf := range localfs {
+		filepath := strings.ReplaceAll(localf.Filename, "/", "::")
+		path := cf.FILEPATH + filepath + "_" + strconv.Itoa(localf.Incarnation)
+		os.Remove(path)
+	}
+	delete(LocalFiles, fmeta.Filename)
+	return &pb.Empty{}, nil
 }

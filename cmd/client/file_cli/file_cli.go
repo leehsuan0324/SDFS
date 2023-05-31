@@ -12,7 +12,6 @@ import (
 	cc "workspace/package/cliclient"
 	"workspace/package/configs"
 	cf "workspace/package/configs"
-	fsys "workspace/package/filesys"
 	mystruct "workspace/package/structs"
 	pb "workspace/proto"
 
@@ -26,7 +25,7 @@ const (
 func main() {
 	var param []string
 	if len(os.Args) < 2 {
-		param = append(param, "putfile", "test/MP1/machine.1.log", "testmachine.log")
+		param = append(param, "put", "test/MP1/machine.1.log", "testmachine.log")
 	} else {
 		for _, arg := range os.Args[1:] {
 			param = append(param, arg)
@@ -56,6 +55,7 @@ func deletefile(sdfsfilename string) {
 		fmt.Printf("GetLeader Failed\n")
 		return
 	}
+	CallDeleteFile(int(leader.Number), sdfsfilename)
 }
 func getversions(sdfsfilename string, incarnation int, localfilename string) {
 	leader := CallGetLeader()
@@ -86,7 +86,7 @@ func lsfile(sdfsfilename string) {
 		fmt.Printf("lsfile: Get FileInfo Failed, %v\n", err)
 		return
 	}
-	fmt.Printf("FileInfo: %v", finfo)
+	fmt.Printf("FileInfo: %v\n", finfo)
 }
 func putfile(localfilename string, sdfsfilename string) {
 
@@ -104,6 +104,8 @@ func putfile(localfilename string, sdfsfilename string) {
 	PFStatus = make([]int, len(finfo.Writing))
 	var syncwrite sync.WaitGroup
 	syncwrite.Add(len(finfo.Writing))
+	var syncwriteend sync.WaitGroup
+	syncwriteend.Add(len(finfo.Writing))
 
 	for i := 0; i < len(finfo.Writing); i++ {
 		// lg.Nodelogger.Infof("UploadFile: Run Writers")
@@ -115,7 +117,7 @@ func putfile(localfilename string, sdfsfilename string) {
 				Filename:    sdfsfilename,
 				Status:      int8(configs.FSWriting),
 				Incarnation: finfo.FMeta.Incarnation,
-			}, &syncwrite, PFStatus)
+			}, &syncwrite, &syncwriteend, PFStatus)
 	}
 	syncwrite.Wait()
 	acked := 0
@@ -127,8 +129,7 @@ func putfile(localfilename string, sdfsfilename string) {
 	} else {
 		fmt.Printf("Write Failed\n")
 	}
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
+	syncwriteend.Wait()
 }
 func getfile(sdfsfilename string, localfilename string) {
 	leader := CallGetLeader()
@@ -153,14 +154,18 @@ func CallGetFile(finfo mystruct.FileInfo, localfilename string) {
 	defer localfile.Close()
 	maxID := 0
 	target := 0
+	cnt := 0
 	for _, host := range finfo.Acked {
-		MD := fsys.CallGetLocalfile(int(host), finfo)
-		fmt.Printf("MD: %v\n", MD)
+		if cnt == 2 {
+			break
+		}
+		MD := cc.CallGetLocalfile(int(host), finfo)
 		ID := MD.Incarnation
 		if maxID < ID {
 			maxID = ID
 			target = int(host)
 		}
+		cnt++
 	}
 	if target == 0 {
 		fmt.Printf("CallGetFile: Fail to Get two latest file from%v\n", configs.Servers[target].Host)
@@ -285,12 +290,13 @@ func CallRegisterFile(node int8, sdfsfilename string, filemetadata *mystruct.Fil
 	return nil
 }
 
-func CallWriteFile(Pos int, Node int32, localfilename string, fmetadata *mystruct.Metadata, syncwrite *sync.WaitGroup, PFStatus []int) {
+func CallWriteFile(Pos int, Node int32, localfilename string, fmetadata *mystruct.Metadata, syncwrite *sync.WaitGroup, syncwriteend *sync.WaitGroup, PFStatus []int) {
 	defer fmt.Printf("CallWriteFile: END\n")
 	RunSuccess := true
 	defer func() {
 		if !RunSuccess {
 			syncwrite.Done()
+			syncwriteend.Done()
 		}
 	}()
 
@@ -355,7 +361,7 @@ func CallWriteFile(Pos int, Node int32, localfilename string, fmetadata *mystruc
 					RunSuccess = false
 					return
 				}
-				if resp.Status != configs.FSWrited {
+				if resp.Status != configs.FSWriting {
 					fmt.Printf("CallWriteFile: PFEnd Response Error %v\n", err)
 					RunSuccess = false
 					return
@@ -384,6 +390,7 @@ func CallWriteFile(Pos int, Node int32, localfilename string, fmetadata *mystruc
 				}
 				stream.Recv()
 				stream.CloseSend()
+				syncwriteend.Done()
 				break
 			}
 			if err != io.ErrUnexpectedEOF {
@@ -409,5 +416,26 @@ func CallWriteFile(Pos int, Node int32, localfilename string, fmetadata *mystruc
 			RunSuccess = false
 			return
 		}
+	}
+}
+func CallDeleteFile(node int, sdfsfilename string) {
+	service := configs.Servers[node].Ip + ":" + configs.FILE_SERVER_PORT
+	conn, err := grpc.Dial(service, grpc.WithInsecure())
+	if err != nil {
+		fmt.Printf("CallDeleteFile: Fail to Dial %v\n", configs.Servers[node].Host)
+		return
+	}
+	fmt.Printf("CallDeleteFile: Success to Dial %v\n", configs.Servers[node].Host)
+	defer conn.Close()
+
+	client := pb.NewFileClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	_, err = client.DeleteFile(ctx, &pb.MetaData{
+		Filename: sdfsfilename,
+	})
+	if err != nil {
+		fmt.Printf("CallDeleteFile: Fail to Delete %v, %v\n", sdfsfilename, err)
 	}
 }

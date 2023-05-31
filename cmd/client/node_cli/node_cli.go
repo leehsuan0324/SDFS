@@ -34,7 +34,10 @@ func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		params := strings.Split(scanner.Text(), " ")
-		method, _ := strconv.Atoi(params[0])
+		method, err := strconv.Atoi(params[0])
+		if err != nil {
+			continue
+		}
 		switch method {
 		case LEAVENODE:
 			length := len(params)
